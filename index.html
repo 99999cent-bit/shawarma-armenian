@@ -1635,31 +1635,13 @@
                 return new Promise((resolve) => {
                     if(typeof firebase === 'undefined') { resolve(); return; }
                     this._showSaveStatus('idle', '☁ Загрузка из облака…');
-
-                    // ── ТАЙМАУТ 8 сек: если Firebase не ответил — продолжаем без него ──
-                    // Без таймаута Promise висит вечно и экран загрузки не убирается.
-                    const timeout = setTimeout(() => {
-                        console.warn('[syncFromFirebase] Таймаут 8с — продолжаем без Firebase');
-                        this._showSaveStatus('err', '⚠ Firebase не ответил — работаем из кэша');
-                        resolve();
-                    }, 8000);
-
                     firebase.database().ref('app_state').once('value').then((snapshot) => {
-                        clearTimeout(timeout);
                         const cloudData = snapshot.val();
                         if(cloudData) {
                             if(cloudData.design)   this._deepMerge(this.state.design, cloudData.design);
                             if(cloudData.order)    this._deepMerge(this.state.order,  cloudData.order);
                             if(Array.isArray(cloudData.cats))  this.state.cats  = cloudData.cats;
                             if(Array.isArray(cloudData.prods)) this.state.prods = cloudData.prods;
-                            // Применяем настройки экрана загрузки из облака
-                            if(cloudData.design && cloudData.design.loading) {
-                                try {
-                                    const lc = cloudData.design.loading;
-                                    localStorage.setItem('_lc', JSON.stringify(lc));
-                                    if(window._applyLC) window._applyLC(lc);
-                                } catch(e) {}
-                            }
                             // Кэшируем для мгновенного рендера при следующей загрузке
                             try { localStorage.setItem('_app_cache', JSON.stringify({
                                 cats: cloudData.cats || [],
@@ -1670,59 +1652,10 @@
                         }
                         resolve();
                     }).catch((e) => {
-                        clearTimeout(timeout);
                         this._showSaveStatus('err', '⚠ ' + (e.message || e.code));
                         resolve();
                     });
                 });
-            },
-
-            // Real-time слушатель /priem_cfg — ссылка бота, модалка, права, пароли
-            _startPriemCfgSync() {
-                if(typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
-                if(this._priemCfgOff) return; // уже запущен
-                let _ownSaveTs = 0;
-                this._priemCfgMarkSave = () => { _ownSaveTs = Date.now(); };
-
-                firebase.database().ref('priem_cfg').on('value', data => {
-                    const d = data.val();
-                    if (!d) return;
-                    if (Date.now() - _ownSaveTs < 3000) return; // echo protection
-
-                    // Ссылка на бота MAX
-                    if(d.bot && d.bot.botLink !== undefined) {
-                        this._maxBotLink = d.bot.botLink || '';
-                        const inp = document.getElementById('fb-bot-link');
-                        if(inp && document.activeElement !== inp) inp.value = d.bot.botLink || '';
-                    }
-                    // Настройки модалки бота
-                    if(d.botModal && typeof d.botModal === 'object') {
-                        try {
-                            const localBm = this._getBotModalSettings();
-                            const merged  = Object.assign({}, d.botModal, {
-                                bgImage: (localBm.bgImage && localBm.bgImage.startsWith('data:')) ? localBm.bgImage : (d.botModal.bgImage || localBm.bgImage || ''),
-                                iconSrc: (localBm.iconSrc && localBm.iconSrc.startsWith('data:')) ? localBm.iconSrc : (d.botModal.iconSrc || localBm.iconSrc || ''),
-                            });
-                            localStorage.setItem('botModalSettings', JSON.stringify(merged));
-                            this._applyBotModal(merged);
-                        } catch(e) {}
-                    }
-                    // Права на вкладки
-                    if(d.tabPerms && typeof d.tabPerms === 'object') {
-                        try {
-                            localStorage.setItem('_tab_p', JSON.stringify(d.tabPerms));
-                            this._applyTabPerms(d.tabPerms);
-                        } catch(e) {}
-                    }
-                    // Логин/пароль администратора
-                    if(d.au) { try { localStorage.setItem('_adm_u', atob(d.au)); } catch(e) {} }
-                    if(d.ap) { try { localStorage.setItem('_adm_p', atob(d.ap)); } catch(e) {} }
-
-                    console.log('[priem_cfg] Синхронизировано из Firebase');
-                }, err => console.warn('[priem_cfg] Ошибка RT:', err));
-
-                this._priemCfgOff = true;
-                console.log('[priem_cfg] Real-time слушатель установлен');
             },
 
             _deepMerge(target, source) {
@@ -2255,7 +2188,6 @@
 
             // ── Сохранить ссылку бота в Firebase ─────────────────────────────
             saveBotLink() {
-                if(this._priemCfgMarkSave) this._priemCfgMarkSave();
                 const val = (document.getElementById('fb-bot-link')||{}).value.trim() || '';
                 const status = document.getElementById('fb-bot-link-status');
                 try {
@@ -2447,11 +2379,7 @@
                         try { await this.syncFromFirebase(); } catch(e) { console.warn('sync:', e); }
                         // Загружаем конфиг приёмки (ссылка на бота MAX)
                         try {
-                            // Таймаут 5с для priem_cfg — чтобы не блокировать загрузку
-                            const priemSnap = await Promise.race([
-                                firebase.database().ref('priem_cfg').once('value'),
-                                new Promise((_, rej) => setTimeout(() => rej(new Error('priem_cfg timeout')), 5000))
-                            ]);
+                            const priemSnap = await firebase.database().ref('priem_cfg').once('value');
                             const priemData = priemSnap.val();
                             if(priemData && priemData.bot && priemData.bot.botLink) {
                                 this._maxBotLink = priemData.bot.botLink;
@@ -2487,8 +2415,6 @@
                         } catch(e) { console.warn('priem_cfg:', e); }
                         // Запускаем real-time слушатель ПОСЛЕ первоначальной загрузки
                         try { this.startRealtimeSync(); } catch(e) { console.warn('rt:', e); }
-                        // Real-time слушатель priem_cfg: ссылка бота, настройки модалки, права вкладок
-                        try { this._startPriemCfgSync(); } catch(e) { console.warn('priemSync:', e); }
                     } else {
                         try { this._showSaveStatus('err', '⚠ Не удалось подключиться к Firebase'); } catch(e) {}
                     }
@@ -3018,13 +2944,6 @@
                     Object.assign(this.state.design.loading, cfg);
                     this._applyLoadingSettings(cfg);
                     try { localStorage.setItem('_lc', JSON.stringify(cfg)); } catch (_) {}
-                    // ── Сохраняем в Firebase чтобы работало на всех устройствах ──
-                    try {
-                        if(typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length) {
-                            firebase.database().ref('app_state/design/loading').set(cfg).catch(()=>{});
-                            console.log('[loading] Настройки экрана сохранены в Firebase');
-                        }
-                    } catch(_) {}
                     try {
                         const bc = new BroadcastChannel('_loading_cfg');
                         bc.postMessage({ type: 'loading_update', cfg });
