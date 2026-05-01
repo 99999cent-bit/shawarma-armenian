@@ -1433,7 +1433,7 @@
     const MASTER_PASS = '4892';
     const _SUPER_PASS_DEFAULT = '9208';
     function getSuperPass() { return localStorage.getItem('super_pass') || _SUPER_PASS_DEFAULT; }
-    function setSuperPass(p) { localStorage.setItem('super_pass', p); }
+    function setSuperPass(p) { localStorage.setItem('super_pass', p); saveCfgToCloud(); }
     const STATUS_MAP  = { new:'Новый', accepted:'Принят', issued:'Выдан', canceled:'Отменён' };
 
     let allOrders  = [];
@@ -1453,8 +1453,8 @@
         const sec = Math.max(5, parseInt(val) || 30);
         const el = document.getElementById('bot-poll-interval');
         if (el) el.value = sec;
-        // Перезапускаем таймер с новым интервалом если работает
         if (botPollTimer) { stopBotAutopoll(); startBotAutopoll(); }
+        saveCfgToCloud(); // синхронизируем интервал в облако
     }
     function startBotAutopoll() {
         stopBotAutopoll();
@@ -2917,11 +2917,12 @@
         if (newP === oldP)  { err.textContent = 'Новый пароль совпадает со старым'; return; }
 
         // Сохраняем новый пароль входа
-        setSuperPass(newP);
+        setSuperPass(newP); // setSuperPass автоматически вызывает saveCfgToCloud
         const now = new Date().toISOString();
         const who = currentUser ? currentUser.name : 'Супер Администратор';
         localStorage.setItem('super_pass_changed_at', now);
         localStorage.setItem('super_pass_changed_by', who);
+        saveCfgToCloud(); // повторно — чтобы сохранить changed_at и changed_by
 
         ok.textContent = `✅ Пароль входа изменён`;
 
@@ -3208,10 +3209,10 @@
             const incoming = Array.isArray(data) ? data : (data.orders||data.data||[]);
             // Авто-исправление телефонов 8→+7 во всех входящих заказах
             incoming.forEach(o => { if(o.customerPhone) o.customerPhone = fixPhone(o.customerPhone); });
-            checkNewOrders(incoming);
             allOrders = incoming;
             updateBadges(); applyAll();
             setConn('ok','Обновлено: '+new Date().toLocaleTimeString('ru-RU',{timeZone:TZ}));
+            try { checkNewOrders(incoming); } catch(ne) { console.warn('[Notif]', ne); }
         } catch(e) { setConn('error', e.message); }
     }
 
@@ -3317,6 +3318,7 @@
     async function _saveCfgNow() {
         if (!_fbDB || !_fbApp?._fbSet) return;
         try {
+            const _pollEl = document.getElementById('bot-poll-interval');
             const data = {
                 savedAt:    new Date().toISOString(),
                 connection: { url: cfg.url, interval: cfg.interval, token: cfg.token, operator: cfg.operator },
@@ -3326,8 +3328,14 @@
                 notif:      getNotifCfg(),
                 bot:        getBotCfg(),
                 subscribers: getBotSubscribers(),
-                history:    getHistory().slice(0, 500),  // последние 500 записей
+                history:    getHistory().slice(0, 500),
                 counter:    _cloud.counter,
+                // Пароль входа (суперадмин)
+                superPass:          getSuperPass(),
+                superPassChangedAt: localStorage.getItem('super_pass_changed_at') || null,
+                superPassChangedBy: localStorage.getItem('super_pass_changed_by') || null,
+                // Интервал поллинга бота (в секундах)
+                pollInterval: _pollEl ? (parseInt(_pollEl.value) || 30) : 30,
             };
             const ref = _fbApp._fbRef(_fbDB, 'priem_cfg');
             await _fbApp._fbSet(ref, data);
@@ -3357,12 +3365,26 @@
         if (data.appearance&& typeof data.appearance === 'object') { _cloud.appearance  = data.appearance;  localStorage.setItem('app_appearance',  JSON.stringify(data.appearance)); }
         // Оповещения
         if (data.notif     && typeof data.notif      === 'object') { _cloud.notif       = data.notif;       localStorage.setItem('app_notif',       JSON.stringify(data.notif)); }
-        // Бот
-        if (data.bot       && typeof data.bot        === 'object') {
+        // Бот — полное применение всех полей
+        if (data.bot && typeof data.bot === 'object') {
             _cloud.bot = data.bot;
             localStorage.setItem('app_bot', JSON.stringify(data.bot));
-            const inp = document.getElementById('bot-token');
-            if (inp && data.bot.token) inp.value = data.bot.token;
+            // Обновляем поля формы (если открыта)
+            const _bi = id => document.getElementById(id);
+            if (_bi('bot-token')   && data.bot.token   !== undefined) _bi('bot-token').value   = data.bot.token   || '';
+            if (_bi('bot-link')    && data.bot.botLink  !== undefined) _bi('bot-link').value    = data.bot.botLink  || '';
+            if (_bi('bot-proxy')   && data.bot.proxy    !== undefined) _bi('bot-proxy').value   = data.bot.proxy    || '';
+            if (_bi('bot-enabled') && data.bot.enabled  !== undefined) _bi('bot-enabled').checked = !!data.bot.enabled;
+            const _bt1 = _bi('bot-tpl-new'),  _bt2 = _bi('bot-tpl-accepted'), _bt3 = _bi('bot-tpl-ready');
+            if (_bt1 && data.bot.tplNew)      _bt1.value = data.bot.tplNew;
+            if (_bt2 && data.bot.tplAccepted) _bt2.value = data.bot.tplAccepted;
+            if (_bt3 && data.bot.tplReady)    _bt3.value = data.bot.tplReady;
+            // Перезапускаем автополлинг с новыми настройками
+            try {
+                stopBotAutopoll();
+                if (data.bot.enabled && data.bot.token) startBotAutopoll();
+                updateBotStatusUI();
+            } catch(e) {}
         }
         // Подписчики
         if (Array.isArray(data.subscribers)) { _cloud.subscribers = data.subscribers; localStorage.setItem('bot_subscribers', JSON.stringify(data.subscribers)); }
@@ -3370,13 +3392,25 @@
         if (Array.isArray(data.history))     { _cloud.history     = data.history;     localStorage.setItem('app_history',     JSON.stringify(data.history)); }
         // Счётчик
         if (data.counter && typeof data.counter === 'object') { _cloud.counter = data.counter; }
+        // Пароль суперадмина
+        if (data.superPass) {
+            localStorage.setItem('super_pass', data.superPass);
+            if (data.superPassChangedAt) localStorage.setItem('super_pass_changed_at', data.superPassChangedAt);
+            if (data.superPassChangedBy) localStorage.setItem('super_pass_changed_by', data.superPassChangedBy);
+        }
+        // Интервал поллинга бота
+        if (data.pollInterval) {
+            const _pie = document.getElementById('bot-poll-interval');
+            if (_pie) _pie.value = data.pollInterval;
+        }
 
         // Обновляем интерфейс
         try { applyAppearanceEngine(); } catch(e){}
         try { updateHeader(); } catch(e){}
         try { applyRestrictions(); } catch(e){}
         try { updateAdminTabsVisibility(); } catch(e){}
-        console.log('[Cloud] Настройки применены из облака (' + (data.savedAt || '?') + ')');
+        try { applyBotTabsVisibility(); } catch(e){}
+        console.log('[Cloud] Настройки синхронизированы из облака (' + (data.savedAt || '?') + ')');
     }
 
     async function loadCfgFromCloud() {
@@ -3428,14 +3462,24 @@
             });
 
             _fbOff = onValue(_fbRef, (snap) => {
-                const data = snap.val();
-                const incoming = data ? Object.values(data) : [];
-                // Авто-исправление телефонов 8→+7
-                incoming.forEach(o => { if(o.customerPhone) o.customerPhone = fixPhone(o.customerPhone); });
-                checkNewOrders(incoming);
-                allOrders = incoming;
-                updateBadges(); applyAll();
-                setConn('ok', '🔥 Firebase: ' + new Date().toLocaleTimeString('ru-RU', {timeZone: TZ}));
+                try {
+                    const data = snap.val();
+                    const incoming = data ? Object.values(data) : [];
+                    // Авто-исправление телефонов 8→+7
+                    incoming.forEach(o => { if(o.customerPhone) o.customerPhone = fixPhone(o.customerPhone); });
+
+                    // Сначала обновляем данные и таблицу — оповещение не должно блокировать рендер
+                    allOrders = incoming;
+                    updateBadges();
+                    applyAll();
+                    setConn('ok', '🔥 Firebase: ' + new Date().toLocaleTimeString('ru-RU', {timeZone: TZ}));
+
+                    // Оповещение — отдельно, чтобы ошибка тут не ломала рендер
+                    try { checkNewOrders(incoming); } catch(ne) { console.warn('[Notif] Ошибка оповещения:', ne); }
+                } catch(e) {
+                    console.error('[Firebase onValue] Ошибка обработки заказов:', e);
+                    setConn('error', 'Ошибка обновления: ' + e.message);
+                }
             }, (err) => {
                 setConn('error', '🔥 Firebase: ' + err.message);
             });
@@ -3627,8 +3671,13 @@
 
     // Синтез звуков через Web Audio API
     function getAudioCtx() {
-        if (!_notifAudioCtx) _notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        return _notifAudioCtx;
+        try {
+            if (!_notifAudioCtx) _notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            return _notifAudioCtx;
+        } catch(e) {
+            console.warn('[Audio] AudioContext недоступен (нет жеста пользователя):', e.message);
+            return null;
+        }
     }
 
     function previewSound(type) {
@@ -3639,6 +3688,8 @@
     }
 
     function playNotifSound(type, vol) {
+        const ctx = getAudioCtx(); if (!ctx) return;
+
         try {
             const ctx = getAudioCtx();
             const gain = ctx.createGain();
@@ -4891,6 +4942,20 @@
         ta.focus();
         saveBotSettings();
     }
+
+    // ── Перерисовка при возврате в приложение (PWA / сворачивание) ──────────
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            // Страница снова видима — обновляем таблицу и бейджи
+            updateBadges();
+            applyAll();
+            console.log('[App] Страница видима — обновление таблицы');
+        }
+    });
+    window.addEventListener('focus', () => {
+        updateBadges();
+        applyAll();
+    });
 
     document.querySelectorAll('.modal-overlay').forEach(el =>
         el.addEventListener('click', e => { if (e.target===el) closeModal(el.id); })
