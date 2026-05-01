@@ -5273,9 +5273,21 @@
                         if(submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ Отправка...'; }
 
                         if(typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length) {
+                            // ── Получаем порядковый номер заказа через атомарный счётчик ──
+                            let receiptNum = null;
+                            try {
+                                const counterRef = firebase.database().ref('counters/order_seq');
+                                const txResult = await counterRef.transaction(c => (c || 0) + 1);
+                                if (txResult.committed) receiptNum = txResult.snapshot.val();
+                            } catch(e) {
+                                console.warn('[Заказ] Ошибка счётчика:', e);
+                            }
+                            orderData.receiptNum = receiptNum; // последние 4 цифры = код верификации
+
                             const newRef = firebase.database().ref('orders').push();
                             orderData.id = newRef.key;
                             await newRef.set(orderData);
+                            console.log('[Заказ] Создан #' + receiptNum + ' key=' + orderData.id);
                         } else {
                             orderData.id = 'local_' + Date.now();
                             console.warn('[Заказ] Firebase не подключён! Заказ не отправлен:', orderData);
@@ -5356,15 +5368,26 @@
 
             // ── Генерация 4-значного кода из receiptNum ──────────────────
             _generateVerifCode(phone, name, orderId, receiptNum) {
-                const code = receiptNum ? String(receiptNum).slice(-4) : String(Math.floor(1000 + Math.random() * 9000));
+                // Код = последние 4 цифры receiptNum с ведущими нулями (1→"0001", 42→"0042")
+                // Если receiptNum нет — случайный 4-значный код как запасной вариант
+                const code = receiptNum
+                    ? String(receiptNum).padStart(4, '0').slice(-4)
+                    : String(Math.floor(1000 + Math.random() * 9000));
                 this._pendingVerifCode = code;
                 const btn = document.getElementById('bot-verif-code-btn');
                 if(btn) btn.textContent = code;
+                console.log('[VerifCode] Код:', code, 'Телефон:', phone, 'receiptNum:', receiptNum);
                 if(typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length) {
                     firebase.database().ref('verification_codes/' + code).set({
                         phone: phone||'', name: name||'', orderId: orderId||'',
                         receiptNum: receiptNum||null, createdAt: Date.now(), used: false
-                    }).catch(()=>{});
+                    }).then(() => {
+                        console.log('[VerifCode] ✅ Код ' + code + ' сохранён в Firebase');
+                    }).catch(e => {
+                        console.error('[VerifCode] ❌ Ошибка сохранения кода:', e);
+                    });
+                } else {
+                    console.warn('[VerifCode] Firebase не инициализирован — код не сохранён!');
                 }
             },
 
