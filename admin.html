@@ -1340,12 +1340,21 @@
             <!-- ═══ Подписчики бота (отдельная вкладка) ═══ -->
             <div class="stab-panel" id="stab-bot-subscribers">
                 <div class="modal-section">
-                    <div id="bot-autopoll-status" style="font-size:12px;margin-bottom:12px;padding:10px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                    <div id="bot-autopoll-status" style="font-size:12px;margin-bottom:12px;padding:10px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
                         <span id="bot-autopoll-text" style="color:#065f46;">⏳ Автополлинг запускается...</span>
-                        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;">
-                            <input type="checkbox" id="bot-autopoll-toggle" checked onchange="toggleBotAutopoll(this.checked)">
-                            <span style="font-size:11px;color:#374151;">Авто 30с</span>
-                        </label>
+                        <div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                                <input type="checkbox" id="bot-autopoll-toggle" checked onchange="toggleBotAutopoll(this.checked)">
+                                <span style="font-size:11px;color:#374151;">Авто</span>
+                            </label>
+                            <div style="display:flex;align-items:center;gap:4px;">
+                                <input type="number" id="bot-poll-interval" min="5" max="3600" value="30"
+                                    style="width:54px;padding:2px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;text-align:center;"
+                                    onchange="setBotPollInterval(this.value)"
+                                    title="Интервал опроса в секундах">
+                                <span style="font-size:11px;color:#6b7280;">сек</span>
+                            </div>
+                        </div>
                     </div>
                     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
                         <button class="btn btn-primary btn-sm" onclick="pollBotSubscribersReset()">🔄 Обновить (все)</button>
@@ -1435,12 +1444,24 @@
     let botPollTimer = null;
     let _botPollEnabled = true;
 
+    function _getPollIntervalMs() {
+        const el = document.getElementById('bot-poll-interval');
+        const sec = el ? Math.max(5, parseInt(el.value) || 30) : 30;
+        return sec * 1000;
+    }
+    function setBotPollInterval(val) {
+        const sec = Math.max(5, parseInt(val) || 30);
+        const el = document.getElementById('bot-poll-interval');
+        if (el) el.value = sec;
+        // Перезапускаем таймер с новым интервалом если работает
+        if (botPollTimer) { stopBotAutopoll(); startBotAutopoll(); }
+    }
     function startBotAutopoll() {
         stopBotAutopoll();
         const token = getBotCfg().token || (document.getElementById('bot-token')||{}).value || '';
         if (!token || !_botPollEnabled) { _updateBotPollStatus(token ? 'stopped' : 'no-token'); return; }
         _runBotPoll();
-        botPollTimer = setInterval(_runBotPoll, 30000);
+        botPollTimer = setInterval(_runBotPoll, _getPollIntervalMs());
         _updateBotPollStatus('running');
     }
     function stopBotAutopoll() {
@@ -1464,7 +1485,7 @@
         const txt = document.getElementById('bot-autopoll-text');
         if (!el || !txt) return;
         const map = {
-            running:  ['#f0fdf4','#bbf7d0','#065f46','🟢 Автополлинг активен — проверка каждые 30 сек'],
+            running:  ['#f0fdf4','#bbf7d0','#065f46',`🟢 Автополлинг активен — проверка каждые ${Math.round(_getPollIntervalMs()/1000)} сек`],
             stopped:  ['#f9fafb','#e5e7eb','#6b7280','⏸ Автополлинг приостановлен'],
             'no-token':['#fef9c3','#fde68a','#92400e','⚠️ Укажите токен бота — автополлинг недоступен'],
             error:    ['#fef2f2','#fecaca','#991b1b','❌ Ошибка опроса — проверьте токен и прокси'],
@@ -2011,6 +2032,21 @@
     function intNumCell(n) {
         return n ? `<span class="int-num dyn-num">${esc(n)}</span>` : `<span style="color:#d1d5db">—</span>`;
     }
+    // 4-значный код для бота
+    // botCode — новое поле, сохраняется прямо в заказ (самый надёжный способ)
+    // receiptNum — запасной (старые заказы)
+    function botCodeOf(o) {
+        if (!o) return null;
+        if (o.botCode) return String(o.botCode);
+        if (o.receiptNum) return String(o.receiptNum).padStart(4, '0').slice(-4);
+        return null;
+    }
+    function botCodeCell(o) {
+        const c = botCodeOf(o);
+        return c
+            ? `<span style="font-family:monospace;font-weight:800;font-size:15px;color:#4f46e5;background:#ede9fe;border-radius:6px;padding:2px 8px;">${c}</span>`
+            : `<span style="color:#d1d5db;font-size:12px">—</span>`;
+    }
 
     function renderTab(t) {
         const rows  = filtered[t]||[];
@@ -2074,11 +2110,9 @@
         const sMap = {new:'Новый',accepted:'Принят',issued:'Выдан',canceled:'Отменён'};
         const sCls = {new:'badge-new',accepted:'badge-accepted',issued:'badge-issued',canceled:'badge-canceled'};
         const intP = o.internalNum ? `<span class="int-num dyn-num" style="font-size:17px">${esc(o.internalNum)}</span> ` : '';
-        // Если есть числовой receiptNum — показываем его крупно, иначе Firebase-ключ
-        const idDisplay = o.receiptNum
-            ? `<span style="font-size:16px;color:#4f46e5;font-weight:800;font-family:monospace">${esc(String(o.receiptNum))}</span>`
-            : `<span style="font-size:13px;color:#6b7280;font-weight:500">${esc(o.id)}</span>`;
-        document.getElementById('modal-title').innerHTML = `&#128230; ${intP}${idDisplay}`;
+        const botCode = botCodeOf(o);
+        // Заголовок: только internalNum + имя клиента (код — под номером заказа)
+        document.getElementById('modal-title').innerHTML = `${intP}${esc(o.customerName||'')}`;
         document.getElementById('modal-subtitle').innerHTML =
             `<span class="badge ${sCls[o.status]}">${sMap[o.status]}</span>${deliveryBadge(o.deliveryType)}`;
 
@@ -2088,7 +2122,11 @@
             <div style="display:flex;gap:0;align-items:flex-start;">
                 <div style="flex:0 0 auto;min-width:170px;padding-right:18px;border-right:1px solid #f3f4f6;">
                     <div class="info-item" style="margin-bottom:10px"><div class="info-lbl">Дата создания</div><div class="info-val">${fmtDT(o.createdAt)}</div></div>
-                    <div class="info-item"><div class="info-lbl">Номер заказа</div><div class="info-val" style="font-family:monospace;color:#4f46e5">${esc(o.id)}</div></div>
+                    <div class="info-item" ${botCode ? '' : 'style="margin-bottom:0"'}>
+                        <div class="info-lbl">Номер заказа</div>
+                        <div class="info-val" style="font-family:monospace;color:#4f46e5">${esc(o.id)}</div>
+                    </div>
+                    ${botCode ? `<div style="margin-top:8px;"><span style="font-size:11px;color:#6b7280;">🤖 Код для бота</span><br><span style="font-family:monospace;font-weight:800;font-size:15px;color:#4f46e5;background:#ede9fe;border-radius:5px;padding:1px 8px;letter-spacing:2px;">${botCode}</span></div>` : ''}
                 </div>
                 <div style="flex:1;padding-left:18px;">
                     <div class="info-grid" style="grid-template-columns:1fr 1fr;gap:8px;">
@@ -3357,7 +3395,7 @@
         const c = getFBCfg();
         if (!c.apiKey || !c.databaseURL) return; // not configured
         setConn('loading', '🔥 Подключение к Firebase...');
-        _priemCfgFirstSkip = false; // сброс при каждой инициализации
+        _priemCfgFirstSkip = false;
         try {
             const { initializeApp, getApps, deleteApp } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js');
             const { getDatabase, ref, onValue, set }     = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
@@ -3859,11 +3897,13 @@
         if (safePath.startsWith('/updates') && !safePath.includes('timeout=')) {
             safePath += (safePath.includes('?') ? '&' : '?') + 'timeout=0';
         }
-        const url     = PLATFORM_API + safePath;
-        const bodyStr = body ? JSON.stringify(body) : undefined;
-        const headers = { 'Authorization': token, 'Content-Type': 'application/json' };
+        const directUrl = PLATFORM_API + safePath;
+        const proxy     = getBotCfg().proxy || '';
+        const proxyUrl  = proxy ? proxy + encodeURIComponent(directUrl) : null;
+        const bodyStr   = body ? JSON.stringify(body) : undefined;
+        const makeHeaders = () => { const h = { 'Authorization': token }; if (bodyStr) h['Content-Type'] = 'application/json'; return h; };
 
-        console.log('MAX Bot →', method, url);
+        console.log('MAX Bot →', method, directUrl);
 
         // ── 1. Android Native Bridge ──────────────────────────────────────────────
         if (window.AndroidBridge && window.AndroidBridge.fetchNoCors) {
@@ -3876,31 +3916,46 @@
                         resolve({ error: true, status, message: (respBody || 'HTTP ' + status).slice(0, 300) });
                     }
                 };
-                window.AndroidBridge.fetchNoCors(method, url, JSON.stringify(headers), bodyStr || '', cbId);
+                window.AndroidBridge.fetchNoCors(method, directUrl, JSON.stringify(makeHeaders()), bodyStr || '', cbId);
             });
         }
 
-        // ── 2. fetch с таймаутом (MAX API разрешает CORS с Authorization) ─────────
+        // ── 2. Прямой запрос ─────────────────────────────────────────────────────
         try {
-            const resp = await _fetchTimeout(url, { method, headers, body: bodyStr }, 8000);
+            const resp = await _fetchTimeout(directUrl, { method, headers: makeHeaders(), body: bodyStr }, 10000);
             if (resp.ok) return await resp.json().catch(() => ({}));
-            const errText = await resp.text().catch(() => '');
-            console.warn('MAX API', resp.status, errText.slice(0, 200));
-            return { error: true, status: resp.status, message: errText.slice(0, 300) };
+            if (resp.status === 401 || resp.status === 403) {
+                const errText = await resp.text().catch(() => '');
+                return { error: true, status: resp.status, message: errText.slice(0, 300) };
+            }
+            throw new Error('HTTP ' + resp.status);
         } catch (fetchErr) {
-            const msg = fetchErr.name === 'AbortError' ? 'Таймаут 8с (проверьте токен и сеть)' : fetchErr.message;
-            console.warn('MAX fetch err:', msg, '— пробуем XHR');
+            if (fetchErr.message && (fetchErr.message.includes('401') || fetchErr.message.includes('403')))
+                return { error: true, status: 401, message: fetchErr.message };
+            console.warn('MAX direct err:', fetchErr.message, proxyUrl ? '→ прокси' : '(прокси не настроен)');
         }
 
-        // ── 3. XHR-фоллбэк ────────────────────────────────────────────────────────
-        try {
-            const resp = await _xhrRequest(method, url, bodyStr, token);
-            if (resp.ok) return await resp.json().catch(() => ({}));
-            const errText = await resp.text().catch(() => '');
-            return { error: true, status: resp.status, message: errText.slice(0, 300) };
-        } catch (xhrErr) {
-            return { error: true, status: 0, message: xhrErr.message };
+        // ── 3. Через CORS-прокси ──────────────────────────────────────────────────
+        if (proxyUrl) {
+            try {
+                const resp = await _fetchTimeout(proxyUrl, { method, headers: makeHeaders(), body: bodyStr }, 12000);
+                if (resp.ok) return await resp.json().catch(() => ({}));
+                const errText = await resp.text().catch(() => '');
+                return { error: true, status: resp.status, message: errText.slice(0, 300) };
+            } catch (proxyErr) {
+                console.warn('MAX proxy err:', proxyErr.message, '→ XHR');
+            }
+            try {
+                const resp = await _xhrRequest(method, proxyUrl, bodyStr, token);
+                if (resp.ok) return await resp.json().catch(() => ({}));
+                const errText = await resp.text().catch(() => '');
+                return { error: true, status: resp.status, message: errText.slice(0, 300) };
+            } catch (xhrErr) {
+                return { error: true, status: 0, message: 'Прокси XHR: ' + xhrErr.message };
+            }
         }
+
+        return { error: true, status: 0, message: 'Нет ответа. Настройте CORS-прокси в настройках бота.' };
     }
 
     function toggleBotTokenVisibility(btn) {
@@ -3994,29 +4049,38 @@
                     subs.push(c);
                     changed = true;
                 } else {
-                    // Обновляем имя если пустое
                     if (!exists.name && c.name) { exists.name = c.name; changed = true; }
                 }
             });
         }
 
-        // ── Шаг 2: GET /updates — обрабатываем новые сообщения для привязки телефонов ──
+        // ── Шаг 2: GET /updates — обрабатываем новые сообщения ───────────────────
         const markerParam = _botUpdatesMarker ? `&marker=${_botUpdatesMarker}` : '';
         const updData = await maxBotRequest('GET', `/updates?limit=100${markerParam}`);
 
         if (updData && !updData.error) {
-            let updates = Array.isArray(updData) ? updData : (Array.isArray(updData.updates) ? updData.updates : []);
+            // Поддерживаем форматы: массив напрямую или {updates:[...]}
+            const updates = Array.isArray(updData)
+                ? updData
+                : (Array.isArray(updData.updates) ? updData.updates : []);
+            // Сохраняем маркер только если есть новые данные
             if (updData.marker) _botUpdatesMarker = updData.marker;
 
-            // Загружаем коды верификации из Firebase
+            console.log('[Bot] /updates получено:', updates.length, 'событий; маркер:', _botUpdatesMarker);
+
+            // ── Загружаем коды верификации из Firebase как ЗАПАСНОЙ вариант ──────
             let verifCodes = {};
             try {
-                if (_fbDB && _fbApp?._fbRef) {
+                if (_fbDB && _fbApp && typeof _fbApp._fbRef === 'function') {
                     const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
                     const vcSnap = await get(_fbApp._fbRef(_fbDB, 'verification_codes'));
-                    if (vcSnap.val()) verifCodes = vcSnap.val();
+                    verifCodes = vcSnap.val() || {};
+                    console.log('[VerifCodes] Загружено из Firebase:', Object.keys(verifCodes).length, 'кодов');
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.warn('[VerifCodes] Ошибка чтения из Firebase:', e.message);
+            }
+
             const verifDbUpdates = [];
             let newLinked = 0;
 
@@ -4024,67 +4088,109 @@
                 if (upd.update_type !== 'message_created') return;
                 const msg = upd.message;
                 if (!msg) return;
-                const s = msg.sender || msg.from;
-                if (!s || !s.user_id) return;
+                const sender = msg.sender || msg.from;
+                if (!sender || !sender.user_id) return;
 
-                const text = ((msg.body && msg.body.text) || msg.text || '').trim();
-                const existing = subs.find(x => String(x.userId) === String(s.user_id));
+                const userId = String(sender.user_id);
+                const text   = ((msg.body && msg.body.text) || msg.text || '').trim();
 
-                // Добавляем если нет
+                // ── Добавляем/обновляем подписчика ───────────────────────────────
+                const existing = subs.find(x => String(x.userId) === userId);
                 if (!existing) {
-                    subs.push({ userId: String(s.user_id), name: s.name || s.username || String(s.user_id), username: s.username || '', phone: '' });
+                    subs.push({ userId, name: sender.name || sender.username || userId, username: sender.username || '', phone: '' });
                     changed = true;
-                } else if (s.name && !existing.name) {
-                    existing.name = s.name; changed = true;
+                } else if (sender.name && !existing.name) {
+                    existing.name = sender.name; changed = true;
                 }
+                const cur = subs.find(x => String(x.userId) === userId);
 
-                const cur = subs.find(x => String(x.userId) === String(s.user_id));
-
-                // ── 4-значный код чека ────────────────────────────────────────────
+                // ── 4-значный код верификации ─────────────────────────────────────
                 if (/^\d{4}$/.test(text)) {
-                    let linkedPhone = '', linkedName = s.name || String(s.user_id), verifKey = '';
-                    if (verifCodes[text] && !verifCodes[text].used) {
+                    console.log('[VerifCode] Получен код:', text, 'от userId:', userId);
+                    let linkedPhone = '', linkedName = sender.name || userId, verifKey = '';
+
+                    // 1. Ищем по allOrders — ПЕРВИЧНЫЙ механизм
+                    //    botCode — прямое поле в заказе (самый надёжный)
+                    //    receiptNum — запасной для старых заказов
+                    const mo = allOrders.find(o => {
+                        if (o.botCode && String(o.botCode) === text) return true;
+                        if (o.receiptNum) {
+                            const code4 = String(o.receiptNum).padStart(4,'0').slice(-4);
+                            if (code4 === text) return true;
+                        }
+                        return false;
+                    });
+                    if (mo) {
+                        linkedPhone = mo.customerPhone || '';
+                        linkedName  = mo.customerName  || linkedName;
+                        console.log('[VerifCode] ✅ Найден по заказу botCode=' + (mo.botCode||mo.receiptNum), '→', linkedPhone);
+                    }
+
+                    // 2. Если не нашли в orders — ищем в verification_codes Firebase
+                    if (!linkedPhone && verifCodes[text] && !verifCodes[text].used) {
                         linkedPhone = verifCodes[text].phone || '';
                         linkedName  = verifCodes[text].name  || linkedName;
                         verifKey    = text;
+                        console.log('[VerifCode] ✅ Найден в Firebase verification_codes →', linkedPhone);
                     }
+
                     if (!linkedPhone) {
-                        const mo = allOrders.find(o => o.receiptNum && String(o.receiptNum).slice(-4) === text);
-                        if (mo) { linkedPhone = mo.customerPhone || ''; linkedName = mo.customerName || linkedName; }
+                        console.log('[VerifCode] ❌ Код', text, 'не найден ни в заказах, ни в Firebase');
+                        console.log('  allOrders с receiptNum:', allOrders.filter(o=>o.receiptNum).map(o=>({id:o.id,receiptNum:o.receiptNum,phone:o.customerPhone})));
+                        console.log('  verifCodes:', verifCodes);
                     }
+
                     if (linkedPhone) {
-                        if (verifKey && _fbDB && _fbApp?._fbSet)
-                            verifDbUpdates.push(_fbApp._fbSet(_fbApp._fbRef(_fbDB, 'verification_codes/' + verifKey), { used: true, linkedUserId: s.user_id, linkedAt: Date.now() }));
-                        const pm = subs.find(x => normPhone(x.phone) === normPhone(linkedPhone));
-                        if (pm) { pm.userId = String(s.user_id); if (!pm.name) pm.name = linkedName; }
-                        else if (cur) { cur.phone = linkedPhone; if (!cur.name) cur.name = linkedName; }
-                        maxBotRequest('POST', '/messages?user_id=' + s.user_id, { text: '✅ Готово! Буду присылать статус заказов.', format: 'markdown' });
+                        // Помечаем код как использованный в Firebase
+                        if (verifKey && _fbDB && _fbApp && _fbApp._fbSet) {
+                            verifDbUpdates.push(_fbApp._fbSet(
+                                _fbApp._fbRef(_fbDB, 'verification_codes/' + verifKey),
+                                { used: true, linkedUserId: userId, linkedAt: Date.now() }
+                            ));
+                        }
+                        // Привязываем телефон к подписчику
+                        const existingByPhone = subs.find(x => normPhone(x.phone) === normPhone(linkedPhone));
+                        if (existingByPhone) {
+                            existingByPhone.userId = userId;
+                            if (!existingByPhone.name) existingByPhone.name = linkedName;
+                        } else if (cur) {
+                            cur.phone = linkedPhone;
+                            if (!cur.name) cur.name = linkedName;
+                        }
+                        // Отправляем подтверждение
+                        maxBotRequest('POST', '/messages?user_id=' + userId, {
+                            text: '✅ Готово! Буду присылать статус заказов.',
+                            format: 'markdown'
+                        });
                         newLinked++; changed = true;
-                        console.log('[VerifCode] ✅', s.user_id, '→', linkedPhone);
-                        return;
+                        console.log('[VerifCode] ✅ Привязан userId:', userId, '→', linkedPhone);
+                        return; // переходим к следующему update
                     }
                 }
 
-                // ── /start PHONE или телефон в тексте ────────────────────────────
-                let linkedPhone = '';
+                // ── /start или телефон в тексте ──────────────────────────────────
+                let phoneFromText = '';
                 if (text.startsWith('/start') || text.startsWith('start')) {
                     const payload = text.replace(/^\/?start\s*/i, '').trim();
                     if (/^\d{9,15}$/.test(payload))
-                        linkedPhone = payload.length === 10 ? '+7' + payload : (payload.startsWith('7') ? '+' + payload : payload);
+                        phoneFromText = payload.length === 10 ? '+7' + payload
+                            : (payload.startsWith('7') ? '+' + payload : payload);
                 }
-                if (!linkedPhone) {
+                if (!phoneFromText) {
                     const m = text.match(/(?:\+7|8|7)(\d{10})/);
-                    if (m) linkedPhone = '+7' + m[1];
+                    if (m) phoneFromText = '+7' + m[1];
                 }
-                if (linkedPhone && cur && !cur.phone) {
-                    cur.phone = linkedPhone; changed = true;
-                    newLinked++;
+                if (phoneFromText && cur && !cur.phone) {
+                    cur.phone = phoneFromText; changed = true; newLinked++;
                 }
             });
 
-            await Promise.all(verifDbUpdates).catch(() => {});
+            await Promise.all(verifDbUpdates).catch(e => console.warn('[VerifCodes] Ошибка обновления used:', e));
+
         } else if (updData && updData.error) {
-            console.warn('[pollBotSubscribers] /updates error:', updData.message);
+            console.warn('[Bot] /updates ошибка:', updData.message);
+        } else if (!updData) {
+            console.warn('[Bot] /updates вернул null — проверьте токен и прокси');
         }
 
         if (changed) saveBotSubscribers(subs);
@@ -4409,11 +4515,6 @@
 
         if (c.banner !== false) {
             showNotifBanner(`${count > 1 ? count + ' новых заказа' : 'Новый заказ'}<br>${details}`);
-        }
-
-        // Опрашиваем бота при новом заказе — не ждём 30 сек
-        if (typeof _runBotPoll === 'function' && getBotCfg && getBotCfg().token) {
-            _runBotPoll();
         }
 
         // Push
