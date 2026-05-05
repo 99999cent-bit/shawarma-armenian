@@ -2322,6 +2322,9 @@
         _subscribedTTIds = new Set();
         _fbDB = null;
 
+        // Сбрасываем guard — в новой ТТ нет недавних локальных записей
+        _lastLocalSaveAt = 0;
+
         // Загружаем данные новой ТТ (полный сброс _cloud)
         loadTTData(ttId);
 
@@ -2682,7 +2685,14 @@
     // ── Хранилище ────────────────────────────────────────────────────────────────
 
     function getUsers()   { return _cloud.users || []; }
-    function saveUsers(u) { _cloud.users = u; saveCfgToCloud(); }
+    let _lastLocalSaveAt = 0;   // timestamp of last local write to Firebase
+    const _LOCAL_SAVE_GUARD_MS = 6000; // 6 сек — не принимаем данные из Firebase после локального сохранения
+
+    function saveUsers(u) {
+        _cloud.users = u;
+        _lastLocalSaveAt = Date.now();
+        saveCfgToCloud();
+    }
 
     function getSecCfg() {
         const c = _cloud.security || {};
@@ -2694,14 +2704,14 @@
                  useSettingsPass: c.useSettingsPass!==false,
                  lockBot: !!c.lockBot };
     }
-    function saveSecCfg(c) { _cloud.security = c; saveCfgToCloud(); }
+    function saveSecCfg(c) { _cloud.security = c; _lastLocalSaveAt = Date.now(); saveCfgToCloud(); }
 
     function getHistory()   { return _cloud.history || []; }
-    function saveHistory(h) { _cloud.history = h; saveCfgToCloud(); }
+    function saveHistory(h) { _cloud.history = h; _lastLocalSaveAt = Date.now(); saveCfgToCloud(); }
 
     // Настройки внешнего вида
     function getAppearance()          { return _cloud.appearance || {}; }
-    function saveAppearanceStorage(a) { _cloud.appearance = a; saveCfgToCloud(); }
+    function saveAppearanceStorage(a) { _cloud.appearance = a; _lastLocalSaveAt = Date.now(); saveCfgToCloud(); }
 
     // ── История действий ─────────────────────────────────────────────────────────
 
@@ -2874,9 +2884,9 @@
 
     function tryLogin() {
         const pass = document.getElementById('loginPass').value.trim();
-
-        // Если аккаунтов нет — входим без пароля (первый запуск / пустая ТТ)
         const users = getUsers();
+
+        // Если аккаунтов нет — входим без пароля
         if (users.length === 0 && pass === '') {
             currentUser = { id:'guest', name:'Без аккаунта', role:'operator' };
             sessionStorage.setItem('cu', JSON.stringify(currentUser));
@@ -2884,7 +2894,11 @@
             afterLogin(); return;
         }
 
-        if (pass.length !== 4) { document.getElementById('loginError').textContent = 'Введите 4 цифры'; return; }
+        // Аккаунты есть — требуем пароль
+        if (pass.length !== 4) {
+            document.getElementById('loginError').textContent = users.length > 0 ? 'Введите пароль' : 'Введите 4 цифры';
+            return;
+        }
 
         if (pass === getSuperPass()) {
             currentUser = { id:'superadmin', name:'Супер Администратор', role:'superadmin' };
@@ -4739,8 +4753,13 @@
     let _priemCfgFirstSkip = false;
 
     // Применяет данные из Firebase priem_cfg в _cloud и cfg (только текущая ТТ)
-    function applyCloudCfg(data) {
+    // fromListener=true означает вызов из onValue — применяем с защитой от гонки
+    function applyCloudCfg(data, fromListener) {
         if (!data) return;
+
+        // Если мы сами только что сохранили данные (< 6 сек) — не перезаписываем
+        // критичные поля: они пришли из Firebase по нашему же save-триггеру или устарели
+        const guardActive = fromListener && (Date.now() - _lastLocalSaveAt < _LOCAL_SAVE_GUARD_MS);
 
         if (data.connection && typeof data.connection === 'object') {
             _cloud.connection = data.connection;
@@ -4749,14 +4768,16 @@
             if (data.connection.token)    cfg.token    = data.connection.token;
             if (data.connection.operator) cfg.operator = data.connection.operator;
         }
-        if (Array.isArray(data.users))      _cloud.users       = data.users;
-        if (data.security)                  _cloud.security    = data.security;
-        if (data.appearance)                _cloud.appearance  = data.appearance;
-        if (data.notif)                     _cloud.notif       = data.notif;
-        if (data.botAlerts)                 _cloud.botAlerts   = data.botAlerts;
-        if (Array.isArray(data.subscribers)) _cloud.subscribers = data.subscribers;
-        if (Array.isArray(data.history))    _cloud.history     = data.history;
-        if (data.counter)                   _cloud.counter     = data.counter;
+        if (!guardActive) {
+            if (Array.isArray(data.users))       _cloud.users       = data.users;
+            if (data.security)                   _cloud.security    = data.security;
+            if (Array.isArray(data.subscribers)) _cloud.subscribers = data.subscribers;
+            if (Array.isArray(data.history))     _cloud.history     = data.history;
+        }
+        if (data.appearance)  _cloud.appearance = data.appearance;
+        if (data.notif)       _cloud.notif      = data.notif;
+        if (data.botAlerts)   _cloud.botAlerts  = data.botAlerts;
+        if (data.counter)     _cloud.counter    = data.counter;
         if (data.bot && typeof data.bot === 'object') {
             _cloud.bot = data.bot;
             const _bi = id => document.getElementById(id);
@@ -4770,7 +4791,6 @@
             if (_bt3 && data.bot.tplReady)    _bt3.value = data.bot.tplReady;
             try { stopBotAutopoll(); if (data.bot.enabled && data.bot.token) startBotAutopoll(); updateBotStatusUI(); } catch(e){}
         }
-        // Пароль суперадмина — только в localStorage (нужен до подключения к Firebase)
         if (data.superPass) {
             localStorage.setItem('super_pass', data.superPass);
             if (data.superPassChangedAt) localStorage.setItem('super_pass_changed_at', data.superPassChangedAt);
@@ -4785,7 +4805,7 @@
         try { applyRestrictions(); } catch(e){}
         try { updateAdminTabsVisibility(); } catch(e){}
         try { applyBotTabsVisibility(); } catch(e){}
-        console.log('[Cloud] Синхронизировано из Firebase (' + (data.savedAt || '?') + ')');
+        if (!guardActive) console.log('[Cloud] Синхронизировано из Firebase (' + (data.savedAt || '?') + ')');
     }
 
     async function loadCfgFromCloud() {
@@ -4875,7 +4895,7 @@
             _fbOffCfg = onValue(ref(_fbDB, _fbCfgPath(myTTId)), (cfgSnap) => {
                 if (!_priemCfgFirstSkip) { _priemCfgFirstSkip = true; return; }
                 if (_activeListenerTT !== myTTId) return;
-                applyCloudCfg(cfgSnap.val());
+                applyCloudCfg(cfgSnap.val(), true); // true = fromListener
             });
 
             // ── 3. Слушаем global/tt_list — чтобы получать новые ТТ с других устройств
@@ -7685,4 +7705,4 @@
     }
 </script>
 </body>
-</html>
+                    </html>
