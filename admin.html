@@ -352,6 +352,8 @@
         </div>
         <div class="login-title">Управление заказами</div>
         <div class="login-sub">Введите пароль для входа</div>
+        <!-- Строка оставшихся дней подписки — обновляется при выборе ТТ -->
+        <div id="login-sub-days" style="display:none;text-align:center;margin:-10px 0 14px;font-size:13px;font-weight:600;padding:6px 12px;border-radius:8px"></div>
         <input class="pin-input" type="text" id="loginPass" maxlength="4" inputmode="numeric" placeholder="0000" autocomplete="off">
         <div class="login-error" id="loginError"></div>
         <button class="btn btn-primary" style="width:100%;padding:12px" onclick="tryLogin()">Войти</button>
@@ -2118,7 +2120,11 @@
         try { return JSON.parse(localStorage.getItem('tt_list') || 'null') || TT_DEFAULT_LIST; }
         catch { return TT_DEFAULT_LIST; }
     }
-    function saveTTList(list) { localStorage.setItem('tt_list', JSON.stringify(list)); }
+    function saveTTList(list) {
+        localStorage.setItem('tt_list', JSON.stringify(list));
+        // Немедленно синхронизируем список в облако
+        _saveTTListToCloud();
+    }
 
     function getCurrentTTId() { return localStorage.getItem('current_tt') || 'tt_1'; }
     function setCurrentTTId(id) { localStorage.setItem('current_tt', id); }
@@ -2216,8 +2222,32 @@
         const name = getCurrentTTName();
         nameEl.textContent = name;
         if (btn) {
-            // Подсвечиваем если есть несколько ТТ или имя ТТ настроено
             btn.classList.toggle('has-tt', list.length > 1 || name !== 'ТТ №1');
+        }
+        updateLoginSubDays();
+    }
+
+    function updateLoginSubDays() {
+        const el = document.getElementById('login-sub-days');
+        if (!el) return;
+        // getTTSubStatus is defined later — safe guard for early calls
+        if (typeof getTTSubStatus !== 'function') { el.style.display = 'none'; return; }
+        const ttId = getCurrentTTId();
+        const st = getTTSubStatus(ttId);
+        if (st.status === 'none') {
+            el.style.display = 'none';
+            return;
+        }
+        el.style.display = 'block';
+        if (st.status === 'active') {
+            el.style.background = '#d1fae5'; el.style.color = '#065f46';
+            el.textContent = `✅ Осталось ${st.daysLeft} дней подписки`;
+        } else if (st.status === 'critical') {
+            el.style.background = '#fef3c7'; el.style.color = '#92400e';
+            el.textContent = st.daysLeft === 0 ? '⚠️ Подписка истекает сегодня!' : `⚠️ Осталось ${st.daysLeft} дн. подписки`;
+        } else {
+            el.style.background = '#fee2e2'; el.style.color = '#991b1b';
+            el.textContent = '🔴 Подписка истекла — вход заблокирован';
         }
     }
 
@@ -2258,7 +2288,7 @@
     function selectTTInline(ttId) {
         setCurrentTTId(ttId);
         loadTTData(ttId);
-        updateLoginTTButton();
+        updateLoginTTButton();   // внутри вызывает updateLoginSubDays
         // Refresh list to show new selection
         renderLoginTTInnerList();
         // Auto-close panel after brief delay
@@ -2439,9 +2469,10 @@
     }
 
     function switchToTTFromSettings(ttId) {
-        switchToTT(ttId);
+        switchToTT(ttId);   // уже сбрасывает allOrders и _cloud
         renderUsers();
         updateSATTDisplay();
+        updateLoginTTButton();
         // Switch to users tab to show result
         const usersBtn = Array.from(document.querySelectorAll('.stabs-nav .stab-btn'))
             .find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes("'users'"));
@@ -2470,44 +2501,49 @@
         if (opName && !/^\d{4}$/.test(opPass)) { err.textContent = 'Пароль оператора — 4 цифры'; return; }
 
         const list = getTTList();
-
-        // Если это первая добавляемая ТТ — спрашиваем как назвать первую
-        if (list.length === 1) {
-            const firstName = prompt(`Как назвать первую (существующую) ТТ "${list[0].name}"?`, list[0].name);
-            if (firstName && firstName.trim()) {
-                list[0].name = firstName.trim();
-            }
+        // Проверка дублей имён
+        if (list.some(t => t.name.toLowerCase() === ttName.toLowerCase())) {
+            err.textContent = 'ТТ с таким именем уже существует'; return;
         }
 
-        // Создаём новую ТТ
+        // Создаём ТОЛЬКО новую ТТ — существующие ТТ не трогаем вообще
         const newId = 'tt_' + Date.now();
         list.push({ id: newId, name: ttName });
         saveTTList(list);
 
-        // Создаём пользователей для новой ТТ
+        // Создаём пользователей для новой ТТ (только её собственных)
+        const ts = Date.now();
         const users = [
-            { id: Date.now() + '_1', name: adminName, role: 'admin', password: adminPass }
+            { id: ts + '_a', name: adminName, role: 'admin', password: adminPass }
         ];
         if (opName) {
-            users.push({ id: Date.now() + '_2', name: opName, role: 'operator', password: opPass });
+            users.push({ id: ts + '_o', name: opName, role: 'operator', password: opPass });
         }
         localStorage.setItem(ttKey('app_users', newId), JSON.stringify(users));
 
-        // Копируем настройки из текущей ТТ (кроме пользователей)
+        // Копируем только технические настройки подключения и внешнего вида из текущей ТТ
+        // НЕ копируем: пользователей, историю, заказы, данные о блокировках
         const curId = getCurrentTTId();
         const settingsToCopy = ['app_security','app_appearance','cfg_url','cfg_interval',
                                 'cfg_token','cfg_operator','app_notif','app_bot',
                                 'app_tg_bot','app_display_cols','app_bot_alerts',
-                                'block_schedules','notif_bot2_cfg','app_fb_cfg'];
+                                'app_fb_cfg'];
         settingsToCopy.forEach(key => {
             const val = localStorage.getItem(ttKey(key, curId)) || localStorage.getItem(key);
             if (val) localStorage.setItem(ttKey(key, newId), val);
         });
+        // Новая ТТ — пустая история, пустые заказы (Firebase создаст свой путь)
+        localStorage.setItem(ttKey('app_history', newId), '[]');
+
+        // Немедленно синхронизируем список ТТ и данные новой ТТ в облако
+        _saveTTListToCloud();
+        _saveTTDataToCloud(newId);
 
         ok.textContent = `✅ ТТ "${ttName}" создана! Пользователи: ${adminName} (адм.)${opName ? ', ' + opName + ' (опер.)' : ''}`;
         nameInput.value = ''; adminNameInput.value = ''; adminPassInput.value = '';
         opNameInput.value = ''; opPassInput.value = '';
         renderTTList();
+        updateLoginTTButton();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -4546,12 +4582,12 @@
     let _fbRef = null;
     let _fbOff = null;  // unsubscribe function
 
-    // Возвращает Firebase-путь с учётом ТТ.
-    // tt_1 — обратная совместимость с существующими данными (путь без префикса).
-    // Другие ТТ используют путь /{ttId}/{path} для полной изоляции.
-    function _fbPath(path) {
+    // Путь к настройкам ТТ — каждая ТТ хранит свои настройки в своём разделе.
+    // tt_1 — обратная совместимость (путь без префикса).
+    // ЗАКАЗЫ всегда читаются из /orders (туда пишет сайт) — не зависит от ТТ.
+    function _fbCfgPath() {
         const ttId = getCurrentTTId();
-        return ttId === 'tt_1' ? path : ttId + '/' + path;
+        return ttId === 'tt_1' ? 'priem_cfg' : ttId + '/priem_cfg';
     }
 
     // ── Облачная синхронизация настроек (/priem_cfg) ──────────────────────────
@@ -4621,32 +4657,138 @@
         input.value = '';
     }
 
-    async function _saveCfgNow() {
+    // ── Глобальная синхронизация: список ТТ → Firebase /global ─────────────────
+    async function _saveTTListToCloud() {
         if (!_fbDB || !_fbApp?._fbSet) return;
         try {
-            const _pollEl = document.getElementById('bot-poll-interval');
+            const ref = _fbApp._fbRef(_fbDB, 'global/tt_list');
+            await _fbApp._fbSet(ref, { list: getTTList(), updatedAt: new Date().toISOString() });
+        } catch(e) { console.warn('[Cloud] TT list save error:', e.message); }
+    }
+
+    // Сохраняет ВСЕ данные конкретной ТТ в Firebase /{ttId}/priem_cfg
+    async function _saveTTDataToCloud(ttId) {
+        if (!_fbDB || !_fbApp?._fbSet) return;
+        const id = ttId || getCurrentTTId();
+        try {
+            const users    = JSON.parse(localStorage.getItem(ttKey('app_users', id))    || '[]');
+            const security = JSON.parse(localStorage.getItem(ttKey('app_security', id)) || '{}');
+            const history  = JSON.parse(localStorage.getItem(ttKey('app_history', id))  || '[]');
+            const appear   = JSON.parse(localStorage.getItem(ttKey('app_appearance', id))|| '{}');
+            const bot      = JSON.parse(localStorage.getItem(ttKey('app_bot', id))       || '{}');
+            const subs     = JSON.parse(localStorage.getItem(ttKey('bot_subscribers', id))|| '[]');
+            const notif    = JSON.parse(localStorage.getItem(ttKey('app_notif', id)) || localStorage.getItem('app_notif') || '{}');
+            const ttSub    = JSON.parse(localStorage.getItem('tt_sub_' + id)              || 'null');
             const data = {
                 savedAt:    new Date().toISOString(),
-                connection: { url: cfg.url, interval: cfg.interval, token: cfg.token, operator: cfg.operator },
-                users:      getUsers(),
-                security:   getSecCfg(),
-                appearance: getAppearance(),
-                notif:      getNotifCfg(),
-                bot:        getBotCfg(),
-                subscribers: getBotSubscribers(),
-                history:    getHistory().slice(0, 500),
-                counter:    _cloud.counter,
-                // Пароль входа (суперадмин)
+                ttId:       id,
+                connection: {
+                    url:      localStorage.getItem(ttKey('cfg_url', id))      || '',
+                    interval: parseInt(localStorage.getItem(ttKey('cfg_interval', id)) || '30'),
+                    token:    localStorage.getItem(ttKey('cfg_token', id))    || '',
+                    operator: localStorage.getItem(ttKey('cfg_operator', id)) || 'Оператор',
+                },
+                users, security, history: history.slice(0, 500), appearance: appear,
+                bot, subscribers: subs, notif,
+                subscription: ttSub,
                 superPass:          getSuperPass(),
                 superPassChangedAt: localStorage.getItem('super_pass_changed_at') || null,
                 superPassChangedBy: localStorage.getItem('super_pass_changed_by') || null,
-                // Интервал поллинга бота (в секундах)
-                pollInterval: _pollEl ? (parseInt(_pollEl.value) || 30) : 30,
             };
-            const ref = _fbApp._fbRef(_fbDB, _fbPath('priem_cfg'));
+            const ref = _fbApp._fbRef(_fbDB, id === 'tt_1' ? 'priem_cfg' : id + '/priem_cfg');
             await _fbApp._fbSet(ref, data);
-            console.log('[Cloud] Настройки сохранены в Firebase');
+            console.log('[Cloud] TT data saved:', id);
+        } catch(e) { console.warn('[Cloud] TT data save error:', e.message); }
+    }
+
+    // Сохраняет текущую ТТ в облако (вызывается при любом изменении настроек)
+    async function _saveCfgNow() {
+        if (!_fbDB || !_fbApp?._fbSet) return;
+        try {
+            await _saveTTDataToCloud(getCurrentTTId());
+            await _saveTTListToCloud();
         } catch(e) { console.warn('[Cloud] Ошибка сохранения настроек:', e.message); }
+    }
+
+    // Загружает список ТТ из /global и данные всех ТТ из Firebase
+    async function _loadAllTTsFromCloud() {
+        if (!_fbDB || !_fbApp?._fbRef) return;
+        try {
+            const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
+            // 1. Загружаем список ТТ
+            const globalSnap = await get(_fbApp._fbRef(_fbDB, 'global/tt_list'));
+            const globalData = globalSnap.val();
+            if (globalData && Array.isArray(globalData.list) && globalData.list.length > 0) {
+                const cloudList = globalData.list;
+                const localList = getTTList();
+                // Мерджим: добавляем ТТ из облака которых нет локально
+                let changed = false;
+                cloudList.forEach(ctt => {
+                    if (!localList.find(lt => lt.id === ctt.id)) {
+                        localList.push(ctt);
+                        changed = true;
+                    } else {
+                        // Обновляем имя из облака
+                        const lt = localList.find(lt => lt.id === ctt.id);
+                        if (lt && lt.name !== ctt.name) { lt.name = ctt.name; changed = true; }
+                    }
+                });
+                if (changed) saveTTList(localList);
+                // 2. Загружаем данные каждой ТТ из облака
+                for (const tt of cloudList) {
+                    const path = tt.id === 'tt_1' ? 'priem_cfg' : tt.id + '/priem_cfg';
+                    try {
+                        const snap = await get(_fbApp._fbRef(_fbDB, path));
+                        const d = snap.val();
+                        if (d) _applyTTCloudData(tt.id, d);
+                    } catch(e2) { console.warn('[Cloud] Cannot load TT:', tt.id, e2.message); }
+                }
+            }
+        } catch(e) { console.warn('[Cloud] _loadAllTTsFromCloud error:', e.message); }
+    }
+
+    // Применяет данные из облака к конкретной ТТ (без активации — просто localStorage)
+    function _applyTTCloudData(ttId, data) {
+        if (!data || !ttId) return;
+        const isCurrent = (ttId === getCurrentTTId());
+        if (data.connection) {
+            if (data.connection.url)      localStorage.setItem(ttKey('cfg_url', ttId),      data.connection.url);
+            if (data.connection.interval) localStorage.setItem(ttKey('cfg_interval', ttId), String(data.connection.interval));
+            if (data.connection.token)    localStorage.setItem(ttKey('cfg_token', ttId),    data.connection.token);
+            if (data.connection.operator) localStorage.setItem(ttKey('cfg_operator', ttId), data.connection.operator);
+        }
+        if (Array.isArray(data.users))     localStorage.setItem(ttKey('app_users',        ttId), JSON.stringify(data.users));
+        if (data.security)                 localStorage.setItem(ttKey('app_security',      ttId), JSON.stringify(data.security));
+        if (Array.isArray(data.history))   localStorage.setItem(ttKey('app_history',       ttId), JSON.stringify(data.history));
+        if (data.appearance)               localStorage.setItem(ttKey('app_appearance',    ttId), JSON.stringify(data.appearance));
+        if (data.bot)                      localStorage.setItem(ttKey('app_bot',           ttId), JSON.stringify(data.bot));
+        if (Array.isArray(data.subscribers))localStorage.setItem(ttKey('bot_subscribers', ttId), JSON.stringify(data.subscribers));
+        if (data.notif)                    localStorage.setItem(ttKey('app_notif',         ttId), JSON.stringify(data.notif));
+        if (data.subscription)             localStorage.setItem('tt_sub_' + ttId,                JSON.stringify(data.subscription));
+        if (data.superPass) {
+            localStorage.setItem('super_pass', data.superPass);
+            if (data.superPassChangedAt) localStorage.setItem('super_pass_changed_at', data.superPassChangedAt);
+            if (data.superPassChangedBy) localStorage.setItem('super_pass_changed_by', data.superPassChangedBy);
+        }
+        // Если это текущая ТТ — обновляем живой _cloud
+        if (isCurrent) {
+            if (Array.isArray(data.users))     _cloud.users      = data.users;
+            if (data.security)                 _cloud.security   = data.security;
+            if (Array.isArray(data.history))   _cloud.history    = data.history;
+            if (data.appearance)               _cloud.appearance = data.appearance;
+            if (data.bot)                      _cloud.bot        = data.bot;
+            if (Array.isArray(data.subscribers))_cloud.subscribers = data.subscribers;
+            if (data.connection) {
+                cfg.url      = data.connection.url      || cfg.url;
+                cfg.interval = data.connection.interval || cfg.interval;
+                cfg.token    = data.connection.token    || cfg.token;
+                cfg.operator = data.connection.operator || cfg.operator;
+            }
+            try { applyAppearanceEngine(); } catch(e){}
+            try { updateHeader(); } catch(e){}
+            try { applyRestrictions(); } catch(e){}
+            try { applyBotTabsVisibility(); } catch(e){}
+        }
     }
 
     let _priemCfgFirstSkip = false;
@@ -4723,11 +4865,15 @@
         if (!_fbDB || !_fbApp?._fbRef) return;
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
-            const snap = await get(_fbApp._fbRef(_fbDB, _fbPath('priem_cfg')));
+            // Сначала загружаем список всех ТТ и их данные
+            await _loadAllTTsFromCloud();
+            // Потом загружаем данные текущей ТТ (уже обновили через _loadAllTTsFromCloud, но применим ещё раз для live _cloud)
+            const snap = await get(_fbApp._fbRef(_fbDB, _fbCfgPath()));
             const data = snap.val();
-            if (!data) { console.log('[Cloud] Настроек в облаке нет'); return; }
-            applyCloudCfg(data);
-            setConn('ok', '☁ Настройки загружены из облака');
+            if (data) {
+                applyCloudCfg(data);
+                setConn('ok', '☁ Настройки загружены из облака');
+            }
         } catch(e) { console.warn('[Cloud] Ошибка загрузки настроек:', e.message); }
     }
 
@@ -4753,14 +4899,14 @@
             // Stop HTTP polling — Firebase replaces it
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 
-            // Listen to /orders in real time — путь зависит от текущей ТТ
-            _fbRef = ref(_fbDB, _fbPath('orders'));
+            // Заказы ВСЕГДА читаем из /orders — туда пишет сайт, независимо от ТТ
+            _fbRef = ref(_fbDB, 'orders');
 
             // Загружаем настройки из облака при первом подключении
             loadCfgFromCloud();
 
-            // Подписываемся на изменения настроек в реальном времени
-            const priemCfgRef = ref(_fbDB, _fbPath('priem_cfg'));
+            // Подписываемся на изменения настроек текущей ТТ в реальном времени
+            const priemCfgRef = ref(_fbDB, _fbCfgPath());
             onValue(priemCfgRef, (cfgSnap) => {
                 // Пропускаем первый вызов — loadCfgFromCloud уже всё загрузил
                 if(!_priemCfgFirstSkip) { _priemCfgFirstSkip = true; return; }
@@ -4801,12 +4947,12 @@
         }
     }
 
-    // Write / update single order in Firebase
+    // Write / update single order in Firebase — всегда в /orders (туда пишет сайт)
     async function fbWriteOrder(order) {
         if (!_fbDB || !_fbApp?._fbSet) return;
         try {
             const safeId = String(order.id).replace(/[.#$\[\]]/g, '_');
-            const orderRef = _fbApp._fbRef(_fbDB, _fbPath('orders') + '/' + safeId);
+            const orderRef = _fbApp._fbRef(_fbDB, 'orders/' + safeId);
             await _fbApp._fbSet(orderRef, order);
         } catch (e) { console.warn('Firebase write error:', e); }
     }
@@ -7160,7 +7306,7 @@
         migrateLegacyData();
         // Load current TT's data
         loadTTData(getCurrentTTId());
-        // Update login button
+        // Update login button + sub days (deferred — getTTSubStatus defined later)
         updateLoginTTButton();
     })();
 
@@ -7193,7 +7339,10 @@
         catch { return _emptySubObj(); }
     }
     function saveTTSubscription(sub, ttId) {
-        localStorage.setItem('tt_sub_' + (ttId || getCurrentTTId()), JSON.stringify(sub));
+        const id = ttId || getCurrentTTId();
+        localStorage.setItem('tt_sub_' + id, JSON.stringify(sub));
+        // Обновляем данные ТТ в облаке сразу
+        _saveTTDataToCloud(id);
     }
     function _emptySubObj() {
         return { tariffName: '', tariffPrice: 0, tariffDays: 30, expiresAt: null, paymentHistory: [] };
@@ -7229,6 +7378,8 @@
                 }
             }
         });
+        // Обновляем строку дней в форме входа
+        updateLoginSubDays();
         // Обновляем панель подписок если она открыта
         if (document.getElementById('stab-subscription')?.classList.contains('active')) {
             renderSubscriptionPanel();
@@ -7573,8 +7724,9 @@
 
     // Init Firebase if configured, otherwise fall back to HTTP polling
     startBlockScheduleChecker();
-    checkAllTTSubscriptions();
+    checkAllTTSubscriptions();                   // также вызывает updateLoginSubDays
     setInterval(checkAllTTSubscriptions, 60000);
+    setTimeout(updateLoginSubDays, 100);         // повторно — все функции точно определены
     const _initFbCfg = getFBCfg();
     if (_initFbCfg.apiKey && _initFbCfg.databaseURL) {
         initFirebase();
