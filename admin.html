@@ -2120,10 +2120,9 @@
         try { return JSON.parse(localStorage.getItem('tt_list') || 'null') || TT_DEFAULT_LIST; }
         catch { return TT_DEFAULT_LIST; }
     }
-    function saveTTList(list) {
+    function saveTTList(list, syncToCloud) {
         localStorage.setItem('tt_list', JSON.stringify(list));
-        // Немедленно синхронизируем список в облако
-        _saveTTListToCloud();
+        if (syncToCloud !== false) _saveTTListToCloud(); // по умолчанию синхронизируем
     }
 
     function getCurrentTTId() { return localStorage.getItem('current_tt') || 'tt_1'; }
@@ -2350,37 +2349,42 @@
     }
 
     function switchToTT(ttId) {
+        // Инвалидируем guard НЕМЕДЛЕННО — pending Firebase callbacks будут проигнорированы
+        _activeListenerTT = null;
+
         setCurrentTTId(ttId);
 
-        // Останавливаем HTTP-поллинг предыдущей ТТ
+        // Останавливаем HTTP-поллинг
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 
-        // Отключаем Firebase-подписку предыдущей ТТ
-        if (typeof _fbOff === 'function') { try { _fbOff(); } catch {} _fbOff = null; }
+        // Отписываемся от ВСЕХ Firebase listeners
+        if (typeof _fbOff === 'function')       { try { _fbOff(); }       catch {} _fbOff = null; }
+        if (typeof _fbOffCfg === 'function')    { try { _fbOffCfg(); }    catch {} _fbOffCfg = null; }
+        if (typeof _fbOffGlobal === 'function') { try { _fbOffGlobal(); } catch {} _fbOffGlobal = null; }
+        (_fbOffAllTTs || []).forEach(off => { try { off(); } catch {} });
+        _fbOffAllTTs = [];
         _fbDB = null;
 
-        // Загружаем данные новой ТТ
+        // Загружаем данные новой ТТ (полный сброс _cloud)
         loadTTData(ttId);
 
-        // Очищаем заказы — они принадлежат предыдущей ТТ
+        // Очищаем заказы — новая ТТ начинает с пустого экрана
         allOrders = [];
-        _knownOrderIds = null; // сбрасываем трекер новых заказов
+        _knownOrderIds = null;
 
         updateBadges();
         applyAll();
         updateTTBar();
         updateLoginTTButton();
 
-        // Подключаемся к источнику данных новой ТТ
+        // Переподключаемся (initFirebase установит _activeListenerTT = ttId)
         const fbCfg = getFBCfg();
         if (fbCfg && fbCfg.apiKey && fbCfg.databaseURL) {
-            if (typeof initFirebase === 'function') initFirebase();
+            initFirebase();
         } else if (cfg.url) {
             fetchOrders();
             setupPoll();
         }
-        // Если нет ни Firebase, ни URL — показываем пустой экран (без демо-данных)
-        // Демо загружается только при первом запуске через initApp()
     }
 
     function updateTTBar() {
@@ -2723,7 +2727,7 @@
         if (fromCloud && fromCloud.length) return fromCloud;
         return JSON.parse(localStorage.getItem(ttKey('app_users')) || '[]');
     }
-    function saveUsers(u) { _ttSaveUsers(u); saveCfgToCloud(); }
+    function saveUsers(u) { _ttSaveUsers(u); saveCfgToCloud(); _saveTTDataToCloud(); }
 
     function getSecCfg() {
         const raw = localStorage.getItem(ttKey('app_security'));   // только текущая ТТ, без legacy-fallback
@@ -4581,13 +4585,23 @@
     let _fbDB  = null;
     let _fbRef = null;
     let _fbOff = null;  // unsubscribe function
+    let _fbOffCfg = null; // unsubscribe for priem_cfg listener
+    let _fbOffGlobal = null; // unsubscribe for global/tt_list listener
+    let _fbOffAllTTs = []; // unsubscribes for all TTs' priem_cfg
+    let _activeListenerTT = null; // guard: TT that owns the current orders listener
 
-    // Путь к настройкам ТТ — каждая ТТ хранит свои настройки в своём разделе.
-    // tt_1 — обратная совместимость (путь без префикса).
-    // ЗАКАЗЫ всегда читаются из /orders (туда пишет сайт) — не зависит от ТТ.
-    function _fbCfgPath() {
-        const ttId = getCurrentTTId();
-        return ttId === 'tt_1' ? 'priem_cfg' : ttId + '/priem_cfg';
+    // Путь к настройкам ТТ (priem_cfg)
+    function _fbCfgPath(ttId) {
+        const id = ttId || getCurrentTTId();
+        return id === 'tt_1' ? 'priem_cfg' : id + '/priem_cfg';
+    }
+
+    // Путь к заказам ТТ
+    // TT1 = /orders (обратная совместимость с сайтом)
+    // TT2+ = /tt_xxx/orders
+    function _fbOrdersPath(ttId) {
+        const id = ttId || getCurrentTTId();
+        return id === 'tt_1' ? 'orders' : id + '/orders';
     }
 
     // ── Облачная синхронизация настроек (/priem_cfg) ──────────────────────────
@@ -4715,33 +4729,41 @@
         if (!_fbDB || !_fbApp?._fbRef) return;
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
-            // 1. Загружаем список ТТ
+            const localList = getTTList();
+
+            // 1. Пробуем получить список ТТ из облака
             const globalSnap = await get(_fbApp._fbRef(_fbDB, 'global/tt_list'));
             const globalData = globalSnap.val();
             if (globalData && Array.isArray(globalData.list) && globalData.list.length > 0) {
                 const cloudList = globalData.list;
-                const localList = getTTList();
-                // Мерджим: добавляем ТТ из облака которых нет локально
                 let changed = false;
                 cloudList.forEach(ctt => {
-                    if (!localList.find(lt => lt.id === ctt.id)) {
-                        localList.push(ctt);
-                        changed = true;
-                    } else {
-                        // Обновляем имя из облака
-                        const lt = localList.find(lt => lt.id === ctt.id);
-                        if (lt && lt.name !== ctt.name) { lt.name = ctt.name; changed = true; }
-                    }
+                    const lt = localList.find(t => t.id === ctt.id);
+                    if (!lt) { localList.push(ctt); changed = true; }
+                    else if (lt.name !== ctt.name) { lt.name = ctt.name; changed = true; }
                 });
-                if (changed) saveTTList(localList);
-                // 2. Загружаем данные каждой ТТ из облака
+                if (changed) saveTTList(localList, false); // local-only
+
+                // 2. Загружаем priem_cfg каждой ТТ из облака (кроме текущей — уже загружена)
                 for (const tt of cloudList) {
+                    if (tt.id === getCurrentTTId()) continue; // текущая уже загружена в loadCfgFromCloud
                     const path = tt.id === 'tt_1' ? 'priem_cfg' : tt.id + '/priem_cfg';
                     try {
                         const snap = await get(_fbApp._fbRef(_fbDB, path));
                         const d = snap.val();
                         if (d) _applyTTCloudData(tt.id, d);
                     } catch(e2) { console.warn('[Cloud] Cannot load TT:', tt.id, e2.message); }
+                }
+            } else {
+                // global/tt_list не существует — загружаем данные всех локально известных ТТ
+                for (const tt of localList) {
+                    if (tt.id === getCurrentTTId()) continue;
+                    const path = tt.id === 'tt_1' ? 'priem_cfg' : tt.id + '/priem_cfg';
+                    try {
+                        const snap = await get(_fbApp._fbRef(_fbDB, path));
+                        const d = snap.val();
+                        if (d) _applyTTCloudData(tt.id, d);
+                    } catch(e2) {}
                 }
             }
         } catch(e) { console.warn('[Cloud] _loadAllTTsFromCloud error:', e.message); }
@@ -4865,29 +4887,53 @@
         if (!_fbDB || !_fbApp?._fbRef) return;
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
-            // Сначала загружаем список всех ТТ и их данные
-            await _loadAllTTsFromCloud();
-            // Потом загружаем данные текущей ТТ (уже обновили через _loadAllTTsFromCloud, но применим ещё раз для live _cloud)
+
+            // ── 1. ВСЕГДА загружаем priem_cfg текущей ТТ (главный приоритет) ──
             const snap = await get(_fbApp._fbRef(_fbDB, _fbCfgPath()));
             const data = snap.val();
             if (data) {
                 applyCloudCfg(data);
-                setConn('ok', '☁ Настройки загружены из облака');
+                setConn('ok', '☁ Данные загружены из облака');
+            } else {
+                // priem_cfg пустой — возможно, новая БД или первый запуск
+                // Попробуем старый путь без префикса (полная обратная совместимость)
+                if (_fbCfgPath() !== 'priem_cfg') {
+                    const legacySnap = await get(_fbApp._fbRef(_fbDB, 'priem_cfg'));
+                    const legacyData = legacySnap.val();
+                    if (legacyData) { applyCloudCfg(legacyData); setConn('ok', '☁ Данные загружены'); }
+                }
             }
-        } catch(e) { console.warn('[Cloud] Ошибка загрузки настроек:', e.message); }
+
+            // ── 2. Загружаем список ТТ и данные остальных ТТ (не блокирует) ──
+            _loadAllTTsFromCloud().catch(e => console.warn('[Cloud] TT list load error:', e.message));
+
+        } catch(e) {
+            console.warn('[Cloud] Ошибка загрузки настроек:', e.message);
+            setConn('error', '☁ Ошибка загрузки: ' + e.message);
+        }
     }
 
     async function initFirebase() {
         const c = getFBCfg();
-        if (!c.apiKey || !c.databaseURL) return; // not configured
+        if (!c.apiKey || !c.databaseURL) return;
         setConn('loading', '🔥 Подключение к Firebase...');
         _priemCfgFirstSkip = false;
-        try {
-            const { initializeApp, getApps, deleteApp } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js');
-            const { getDatabase, ref, onValue, set }     = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
 
-            // Remove previous instance if exists
-            if (_fbOff) { try { _fbOff(); } catch {} _fbOff = null; }
+        // Запоминаем ТТ, для которой стартует этот listener
+        const myTTId = getCurrentTTId();
+        _activeListenerTT = myTTId;
+
+        try {
+            const { initializeApp, deleteApp } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js');
+            const { getDatabase, ref, onValue, set } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
+
+            // Отписываемся от всех старых listeners
+            if (_fbOff)       { try { _fbOff(); }       catch {} _fbOff = null; }
+            if (_fbOffCfg)    { try { _fbOffCfg(); }    catch {} _fbOffCfg = null; }
+            if (_fbOffGlobal) { try { _fbOffGlobal(); } catch {} _fbOffGlobal = null; }
+            _fbOffAllTTs.forEach(off => { try { off(); } catch {} });
+            _fbOffAllTTs = [];
+
             if (_fbApp) {
                 try { await deleteApp(_fbApp); } catch {}
                 _fbApp = null; _fbDB = null;
@@ -4895,64 +4941,102 @@
 
             _fbApp = initializeApp(c, 'priom_app_' + Date.now());
             _fbDB  = getDatabase(_fbApp);
+            _fbApp._fbSet = set;
+            _fbApp._fbRef = ref;
 
-            // Stop HTTP polling — Firebase replaces it
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 
-            // Заказы ВСЕГДА читаем из /orders — туда пишет сайт, независимо от ТТ
-            _fbRef = ref(_fbDB, 'orders');
-
-            // Загружаем настройки из облака при первом подключении
-            loadCfgFromCloud();
-
-            // Подписываемся на изменения настроек текущей ТТ в реальном времени
-            const priemCfgRef = ref(_fbDB, _fbCfgPath());
-            onValue(priemCfgRef, (cfgSnap) => {
-                // Пропускаем первый вызов — loadCfgFromCloud уже всё загрузил
-                if(!_priemCfgFirstSkip) { _priemCfgFirstSkip = true; return; }
-                applyCloudCfg(cfgSnap.val());
-            });
-
+            // ── 1. Слушаем /orders (или /tt_xxx/orders) для текущей ТТ ─────────
+            _fbRef = ref(_fbDB, _fbOrdersPath(myTTId));
             _fbOff = onValue(_fbRef, (snap) => {
+                // GUARD: если ТТ уже переключили — игнорируем этот callback
+                if (_activeListenerTT !== myTTId) return;
                 try {
                     const data = snap.val();
                     const incoming = data ? Object.values(data) : [];
-                    // Авто-исправление телефонов 8→+7
-                    incoming.forEach(o => { if(o.customerPhone) o.customerPhone = fixPhone(o.customerPhone); });
-
-                    // Сначала обновляем данные и таблицу — оповещение не должно блокировать рендер
+                    incoming.forEach(o => { if (o.customerPhone) o.customerPhone = fixPhone(o.customerPhone); });
                     allOrders = incoming;
                     updateBadges();
                     applyAll();
                     setConn('ok', '🔥 Firebase: ' + new Date().toLocaleTimeString('ru-RU', {timeZone: TZ}));
-
-                    // Оповещение — отдельно, чтобы ошибка тут не ломала рендер
-                    try { checkNewOrders(incoming); } catch(ne) { console.warn('[Notif] Ошибка оповещения:', ne); }
+                    try { checkNewOrders(incoming); } catch(ne) { console.warn('[Notif]', ne); }
                 } catch(e) {
-                    console.error('[Firebase onValue] Ошибка обработки заказов:', e);
+                    console.error('[Firebase onValue orders]', e);
                     setConn('error', 'Ошибка обновления: ' + e.message);
                 }
-            }, (err) => {
-                setConn('error', '🔥 Firebase: ' + err.message);
+            }, err => setConn('error', '🔥 Firebase: ' + err.message));
+
+            // ── 2. Слушаем настройки текущей ТТ (priem_cfg) ─────────────────
+            _fbOffCfg = onValue(ref(_fbDB, _fbCfgPath(myTTId)), (cfgSnap) => {
+                if (!_priemCfgFirstSkip) { _priemCfgFirstSkip = true; return; }
+                if (_activeListenerTT !== myTTId) return;
+                applyCloudCfg(cfgSnap.val());
             });
 
-            // Store helpers for write-back
-            _fbApp._fbSet = set;
-            _fbApp._fbRef = ref;
+            // ── 3. Слушаем global/tt_list — чтобы получать новые ТТ с других устройств
+            _fbOffGlobal = onValue(ref(_fbDB, 'global/tt_list'), (snap) => {
+                const gd = snap.val();
+                if (!gd || !Array.isArray(gd.list)) return;
+                const cloudList = gd.list;
+                const localList = getTTList();
+                let changed = false;
+                cloudList.forEach(ctt => {
+                    const lt = localList.find(t => t.id === ctt.id);
+                    if (!lt) { localList.push(ctt); changed = true; }
+                    else if (lt.name !== ctt.name) { lt.name = ctt.name; changed = true; }
+                });
+                if (changed) {
+                    localStorage.setItem('tt_list', JSON.stringify(localList)); // только localStorage, без cloud-push
+                    updateLoginTTButton();
+                    updateTTBar();
+                    updateSATTDisplay();
+                    // Подписываемся на priem_cfg всех новых ТТ
+                    _subscribeAllTTsCfg(cloudList, ref, onValue);
+                }
+            });
+
+            // ── 4. Сразу подписываемся на priem_cfg всех известных ТТ ────────
+            await loadCfgFromCloud();
+            _subscribeAllTTsCfg(getTTList(), ref, onValue);
+
             logAction('firebase_connect', 'Firebase Realtime Database подключён');
-            setTimeout(startBotAutopoll, 2000); // запускаем автополлинг бота
+            setTimeout(startBotAutopoll, 2000);
         } catch (e) {
             setConn('error', '🔥 Firebase ошибка: ' + e.message);
             console.error('Firebase init error:', e);
         }
     }
 
-    // Write / update single order in Firebase — всегда в /orders (туда пишет сайт)
+    // Подписываемся на priem_cfg каждой ТТ для real-time синхронизации между устройствами
+    function _subscribeAllTTsCfg(ttList, ref, onValue) {
+        if (!_fbDB) return;
+        ttList.forEach(tt => {
+            const path = _fbCfgPath(tt.id);
+            // Уже подписаны на текущую ТТ отдельным _fbOffCfg — пропускаем
+            if (tt.id === _activeListenerTT) return;
+            // Не дублируем подписки
+            if (_fbOffAllTTs._ttIds && _fbOffAllTTs._ttIds.has(tt.id)) return;
+            _fbOffAllTTs._ttIds = _fbOffAllTTs._ttIds || new Set();
+            _fbOffAllTTs._ttIds.add(tt.id);
+            const off = onValue(ref(_fbDB, path), (snap) => {
+                const d = snap.val();
+                if (!d) return;
+                _applyTTCloudData(tt.id, d);
+                // Если вдруг эта ТТ стала текущей — обновляем live UI
+                if (tt.id === getCurrentTTId() && tt.id !== _activeListenerTT) {
+                    try { updateHeader(); applyRestrictions(); applyBotTabsVisibility(); } catch {}
+                }
+            });
+            _fbOffAllTTs.push(off);
+        });
+    }
+
+    // Write / update single order — путь зависит от ТТ (TT1 → /orders, TT2+ → /tt_xxx/orders)
     async function fbWriteOrder(order) {
         if (!_fbDB || !_fbApp?._fbSet) return;
         try {
             const safeId = String(order.id).replace(/[.#$\[\]]/g, '_');
-            const orderRef = _fbApp._fbRef(_fbDB, 'orders/' + safeId);
+            const orderRef = _fbApp._fbRef(_fbDB, _fbOrdersPath() + '/' + safeId);
             await _fbApp._fbSet(orderRef, order);
         } catch (e) { console.warn('Firebase write error:', e); }
     }
