@@ -4563,13 +4563,9 @@
         return id === 'tt_1' ? 'priem_cfg' : id + '/priem_cfg';
     }
 
-    // Путь к заказам ТТ
-    // TT1 = /orders (обратная совместимость с сайтом)
-    // TT2+ = /tt_xxx/orders
-    function _fbOrdersPath(ttId) {
-        const id = ttId || getCurrentTTId();
-        return id === 'tt_1' ? 'orders' : id + '/orders';
-    }
+    // Все ТТ читают заказы из /orders — туда пишет сайт.
+    // Изоляция заказов по ТТ будет реализована на стороне сайта в будущем.
+    function _fbOrdersPath() { return 'orders'; }
 
     // ── Облачная синхронизация настроек (/priem_cfg) ──────────────────────────
 
@@ -4813,23 +4809,18 @@
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
 
-            // ── 1. ВСЕГДА загружаем priem_cfg текущей ТТ (главный приоритет) ──
-            const snap = await get(_fbApp._fbRef(_fbDB, _fbCfgPath()));
+            // Загружаем priem_cfg текущей ТТ
+            const cfgPath = _fbCfgPath();
+            const snap = await get(_fbApp._fbRef(_fbDB, cfgPath));
             const data = snap.val();
             if (data) {
                 applyCloudCfg(data);
                 setConn('ok', '☁ Данные загружены из облака');
-            } else {
-                // priem_cfg пустой — возможно, новая БД или первый запуск
-                // Попробуем старый путь без префикса (полная обратная совместимость)
-                if (_fbCfgPath() !== 'priem_cfg') {
-                    const legacySnap = await get(_fbApp._fbRef(_fbDB, 'priem_cfg'));
-                    const legacyData = legacySnap.val();
-                    if (legacyData) { applyCloudCfg(legacyData); setConn('ok', '☁ Данные загружены'); }
-                }
             }
+            // ВАЖНО: НЕ делаем fallback на priem_cfg другой ТТ!
+            // Если данных нет — новая ТТ начинает пустой (без чужих пользователей)
 
-            // ── 2. Загружаем список ТТ и данные остальных ТТ (не блокирует) ──
+            // Загружаем список ТТ и данные других ТТ (не блокирует)
             _loadAllTTsFromCloud().catch(e => console.warn('[Cloud] TT list load error:', e.message));
 
         } catch(e) {
@@ -4871,8 +4862,8 @@
 
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 
-            // ── 1. Слушаем /orders (или /tt_xxx/orders) для текущей ТТ ─────────
-            _fbRef = ref(_fbDB, _fbOrdersPath(myTTId));
+            // ── 1. Слушаем /orders — туда пишет сайт (все ТТ читают отсюда) ─────
+            _fbRef = ref(_fbDB, _fbOrdersPath());
             _fbOff = onValue(_fbRef, (snap) => {
                 // GUARD: если ТТ уже переключили — игнорируем этот callback
                 if (_activeListenerTT !== myTTId) return;
@@ -4954,12 +4945,11 @@
         });
     }
 
-    // Write / update single order — путь зависит от ТТ (TT1 → /orders, TT2+ → /tt_xxx/orders)
     async function fbWriteOrder(order) {
         if (!_fbDB || !_fbApp?._fbSet) return;
         try {
             const safeId = String(order.id).replace(/[.#$\[\]]/g, '_');
-            const orderRef = _fbApp._fbRef(_fbDB, _fbOrdersPath() + '/' + safeId);
+            const orderRef = _fbApp._fbRef(_fbDB, 'orders/' + safeId);
             await _fbApp._fbSet(orderRef, order);
         } catch (e) { console.warn('Firebase write error:', e); }
     }
@@ -7705,4 +7695,4 @@
     }
 </script>
 </body>
-                    </html>
+                </html>
