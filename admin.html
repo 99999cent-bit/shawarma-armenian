@@ -1561,7 +1561,7 @@
                     </div>
                     <textarea class="s-input tpl-ta" id="bot-tpl-welcome" rows="5" style="border-radius:0 0 8px 8px;border-top:none;resize:vertical;font-size:13px;font-family:monospace">✅ Готово! Буду присылать статус заказов.
 
-Чтобы привязать ваш телефон, назовите номер чека (4 цифры) который написан на вашем заказе.</textarea>
+📋 Чтобы привязать ваш телефон — отправьте 4-значный номер чека (написан в подтверждении заказа).</textarea>
                 </div>
 
                 <!-- Кнопки -->
@@ -5910,6 +5910,7 @@
 
                 const userId = String(sender.user_id);
                 const text   = ((msg.body && msg.body.text) || msg.text || '').trim();
+                const senderName = (sender.name || sender.username || '').trim().toLowerCase();
 
                 // ── Добавляем/обновляем подписчика ───────────────────────────────
                 const existing = subs.find(x => String(x.userId) === userId);
@@ -5923,14 +5924,32 @@
                 }
                 const cur = subs.find(x => String(x.userId) === userId);
 
+                // ── Авто-привязка: ищем заказ где имя клиента совпадает с именем подписчика ──
+                // Работает если подписчик пишет боту ПОСЛЕ оформления заказа
+                if (cur && !cur.phone && senderName.length >= 2) {
+                    const nameMatches = allOrders.filter(o => {
+                        if (!o.customerPhone || !o.customerName) return false;
+                        return o.customerName.trim().toLowerCase() === senderName;
+                    });
+                    // Берём только если одно уникальное совпадение (нет риска перепутать)
+                    const uniquePhones = [...new Set(nameMatches.map(o => normPhone(o.customerPhone)))];
+                    if (uniquePhones.length === 1 && uniquePhones[0]) {
+                        cur.phone = uniquePhones[0];
+                        changed = true;
+                        console.log('[AutoLink] ✅ Авто-привязка по имени:', senderName, '→', cur.phone);
+                        maxBotRequest('POST', '/messages?user_id=' + userId, {
+                            text: '✅ Готово! Буду присылать статус заказов.',
+                            format: 'markdown'
+                        });
+                    }
+                }
+
                 // ── 4-значный код верификации ─────────────────────────────────────
                 if (/^\d{4}$/.test(text)) {
                     console.log('[VerifCode] Получен код:', text, 'от userId:', userId);
                     let linkedPhone = '', linkedName = sender.name || userId, verifKey = '';
 
-                    // 1. Ищем по allOrders — ПЕРВИЧНЫЙ механизм
-                    //    botCode — прямое поле в заказе (самый надёжный)
-                    //    receiptNum — запасной для старых заказов
+                    // 1. Ищем по allOrders текущей ТТ
                     const mo = allOrders.find(o => {
                         if (o.botCode && String(o.botCode) === text) return true;
                         if (o.receiptNum) {
@@ -5942,10 +5961,39 @@
                     if (mo) {
                         linkedPhone = mo.customerPhone || '';
                         linkedName  = mo.customerName  || linkedName;
-                        console.log('[VerifCode] ✅ Найден по заказу botCode=' + (mo.botCode||mo.receiptNum), '→', linkedPhone);
+                        console.log('[VerifCode] ✅ Найден в allOrders botCode=' + (mo.botCode||mo.receiptNum), '→', linkedPhone);
                     }
 
-                    // 2. Если не нашли в orders — ищем в verification_codes Firebase
+                    // 2. Если не нашли — ищем в ДРУГИХ ТТ через Firebase
+                    if (!linkedPhone && _fbDB && _fbApp && typeof _fbApp._fbRef === 'function') {
+                        try {
+                            const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
+                            const ttList = getTTList();
+                            for (const tt of ttList) {
+                                if (tt.id === getCurrentTTId()) continue; // уже проверили
+                                const ordersPath = tt.id === 'tt_1' ? 'orders' : tt.id + '/orders';
+                                const ordersSnap = await get(_fbApp._fbRef(_fbDB, ordersPath));
+                                const ordersData = ordersSnap.val() || {};
+                                const ttOrders = Object.values(ordersData);
+                                const ttMatch = ttOrders.find(o => {
+                                    if (o.botCode && String(o.botCode) === text) return true;
+                                    if (o.receiptNum) {
+                                        const code4 = String(o.receiptNum).padStart(4,'0').slice(-4);
+                                        if (code4 === text) return true;
+                                    }
+                                    return false;
+                                });
+                                if (ttMatch) {
+                                    linkedPhone = ttMatch.customerPhone || '';
+                                    linkedName  = ttMatch.customerName  || linkedName;
+                                    console.log('[VerifCode] ✅ Найден в ТТ', tt.name, '→', linkedPhone);
+                                    break;
+                                }
+                            }
+                        } catch(e) { console.warn('[VerifCode] Ошибка поиска по другим ТТ:', e.message); }
+                    }
+
+                    // 3. Запасной вариант — verification_codes Firebase
                     if (!linkedPhone && verifCodes[text] && !verifCodes[text].used) {
                         linkedPhone = verifCodes[text].phone || '';
                         linkedName  = verifCodes[text].name  || linkedName;
@@ -5954,9 +6002,12 @@
                     }
 
                     if (!linkedPhone) {
-                        console.log('[VerifCode] ❌ Код', text, 'не найден ни в заказах, ни в Firebase');
-                        console.log('  allOrders с receiptNum:', allOrders.filter(o=>o.receiptNum).map(o=>({id:o.id,receiptNum:o.receiptNum,phone:o.customerPhone})));
-                        console.log('  verifCodes:', verifCodes);
+                        console.log('[VerifCode] ❌ Код', text, 'не найден нигде');
+                        // Сообщаем пользователю что код не найден
+                        maxBotRequest('POST', '/messages?user_id=' + userId, {
+                            text: '❌ Код не найден. Убедитесь что вводите 4 цифры номера чека из подтверждения заказа.',
+                            format: 'markdown'
+                        });
                     }
 
                     if (linkedPhone) {
