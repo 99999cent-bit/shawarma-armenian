@@ -893,6 +893,12 @@
                                 <label class="text-sm text-brand-muted mb-2 block">Загрузить с устройства</label>
                                 <input type="file" accept="video/*,image/*" onchange="app.handleLogoUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setLogoUrl(this.value.trim())" oninput="app.setLogoUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                             </div>
 
                             <!-- URL -->
@@ -1016,6 +1022,12 @@
                                 <label class="text-sm text-brand-muted mb-2 block">Фоновое изображение</label>
                                 <input type="file" accept="image/*" onchange="app.handleBgUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer mb-2">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setBgUrl(this.value.trim())" oninput="app.setBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div class="flex gap-2">
                                     <button onclick="app.resetBg()" class="tap-target flex-1 bg-[#4e342e] text-white font-bold py-2 rounded-lg text-sm">Стандартный фон</button>
                                     <button onclick="app.clearBg()" class="tap-target flex-1 bg-red-900/40 text-red-300 font-bold py-2 rounded-lg text-sm">Убрать</button>
@@ -1121,6 +1133,12 @@
                                 <!-- Файл -->
                                 <input type="file" accept="image/*" id="in-card-bg-file" onchange="app.handleCardBgUpload(event)"
                                     class="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCardBgUrl(this.value.trim())" oninput="app.setCardBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <!-- Превью -->
                                 <div id="preview-card-bg" class="hidden relative">
                                     <img id="preview-card-bg-el" class="w-full h-24 object-cover rounded-lg border border-[#4e342e]">
@@ -1213,6 +1231,12 @@
                                 <!-- Файл -->
                                 <input type="file" accept="image/*" id="in-detail-bg-file" onchange="app.handleDetailBgUpload(event)"
                                     class="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setDetailBgUrl(this.value.trim())" oninput="app.setDetailBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <!-- Превью -->
                                 <div id="preview-detail-bg" class="hidden relative">
                                     <img id="preview-detail-bg-el" class="w-full h-24 object-cover rounded-lg border border-[#4e342e]">
@@ -1356,6 +1380,12 @@
                                 <label class="text-sm text-brand-muted mb-2 block">Фоновое изображение окон</label>
                                 <input type="file" accept="image/*" onchange="app.handleWinBgUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer mb-2">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setWinBgUrl(this.value.trim())" oninput="app.setWinBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <button onclick="app.clearWinBgImage()" class="tap-target w-full bg-red-900/40 text-red-300 font-bold py-2 rounded-lg text-sm">Убрать изображение</button>
                             </div>
 
@@ -1395,6 +1425,12 @@
                                 <label class="text-sm text-brand-muted mb-2 block">Фоновое изображение шапки</label>
                                 <input type="file" accept="image/*" onchange="app.handleHeaderBgUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer mb-2">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setHeaderBgUrl(this.value.trim())" oninput="app.setHeaderBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div id="preview-header-bg" class="hidden relative mb-2">
                                     <img id="preview-header-bg-el" class="w-full h-16 object-cover rounded-lg border border-[#4e342e]">
                                     <button onclick="app.clearHeaderBgImage()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center">
@@ -1447,6 +1483,12 @@
                                 <label class="text-sm text-brand-muted mb-2 block">Фоновое изображение</label>
                                 <input type="file" accept="image/*" onchange="app.handleCatbarBgUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer mb-2">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCatbarBgUrl(this.value.trim())" oninput="app.setCatbarBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div id="preview-catbar-bg" class="hidden relative mb-2">
                                     <img id="preview-catbar-bg-el" class="w-full h-16 object-cover rounded-lg border border-[#4e342e]">
                                     <button onclick="app.clearCatbarBgImage()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center">
@@ -2211,6 +2253,12 @@
                                 <label class="text-sm text-brand-muted mb-2 block">Фоновое изображение</label>
                                 <input type="file" accept="image/*" onchange="app.handleCartItemBgUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer mb-2">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCartItemBgUrl(this.value.trim())" oninput="app.setCartItemBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div id="preview-cart-item-bg" class="hidden relative mb-2">
                                     <img id="preview-cart-item-bg-el" class="w-full h-16 object-cover rounded-lg border border-[#4e342e]">
                                     <button onclick="app.clearCartItemBgImage()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center">
@@ -2262,6 +2310,12 @@
                                 <label class="text-sm text-brand-muted mb-2 block">Фоновое изображение</label>
                                 <input type="file" accept="image/*" onchange="app.handleCartFooterBgUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer mb-2">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCartFooterBgUrl(this.value.trim())" oninput="app.setCartFooterBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div id="preview-cart-footer-bg" class="hidden relative mb-2">
                                     <img id="preview-cart-footer-bg-el" class="w-full h-16 object-cover rounded-lg border border-[#4e342e]">
                                     <button onclick="app.clearCartFooterBgImage()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center">
@@ -2305,6 +2359,12 @@
                                 <label class="text-sm text-brand-muted mb-2 block">Фоновое изображение</label>
                                 <input type="file" accept="image/*" onchange="app.handleCartHeaderBgUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer mb-2">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCartHeaderBgUrl(this.value.trim())" oninput="app.setCartHeaderBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div id="preview-cart-header-bg" class="hidden relative mb-2">
                                     <img id="preview-cart-header-bg-el" class="w-full h-16 object-cover rounded-lg border border-[#4e342e]">
                                     <button onclick="app.clearCartHeaderBgImage()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center">
@@ -2360,6 +2420,12 @@
                         <div class="p-4 pt-0 space-y-4">
                             <input type="file" accept="image/*" onchange="app.handleCartBodyBgUpload(event)"
                                 class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCartBodyBgUrl(this.value.trim())" oninput="app.setCartBodyBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                             <div id="preview-cart-body-bg" class="hidden relative">
                                 <img id="preview-cart-body-bg-el" class="w-full h-20 object-cover rounded-lg border border-[#4e342e]">
                                 <button onclick="app.clearCartBodyBgImage()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
@@ -2393,6 +2459,12 @@
                         <div class="p-4 pt-0 space-y-4">
                             <input type="file" accept="image/*" onchange="app.handleCheckoutBgUpload(event)"
                                 class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCheckoutBgUrl(this.value.trim())" oninput="app.setCheckoutBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                             <div id="preview-checkout-bg" class="hidden relative">
                                 <img id="preview-checkout-bg-el" class="w-full h-20 object-cover rounded-lg border border-[#4e342e]">
                                 <button onclick="app.clearCheckoutBgImage()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
@@ -2431,6 +2503,12 @@
                                 <label class="text-xs font-bold text-brand-accent">Фон окна</label>
                                 <input type="file" accept="image/*" onchange="app.handleChoiceModalBgUpload(event)"
                                     class="w-full text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setChoiceModalBgUrl(this.value.trim())" oninput="app.setChoiceModalBgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div id="preview-choice-bg" class="hidden relative">
                                     <img id="preview-choice-bg-el" class="w-full h-16 object-cover rounded-lg border border-[#4e342e]">
                                     <button onclick="app.clearChoiceModalBgImage()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
@@ -2524,6 +2602,12 @@
                                     <div class="text-xs text-brand-muted text-center">— или —</div>
                                     <input type="file" accept="image/*" id="in-cat-img-file" onchange="app.handleCategoryImgUpload(event)"
                                         class="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCategoryImgUrl(this.value.trim())" oninput="app.setCategoryImgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                     <div id="preview-cat-img" class="hidden"><img id="preview-cat-img-el" class="w-full h-20 object-cover rounded-lg border border-[#4e342e]"></div>
                                 </div>
 
@@ -2539,6 +2623,12 @@
                                     <div class="text-xs text-brand-muted text-center">— или —</div>
                                     <input type="file" accept="video/*" id="in-cat-video-file" onchange="app.handleCategoryVideoUpload(event)"
                                         class="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL видео (https://...mp4)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setCategoryVideoUrl(this.value.trim())" oninput="app.setCategoryVideoUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                     <div id="preview-cat-video" class="hidden relative">
                                         <video id="preview-cat-video-el" class="w-full h-20 object-cover rounded-lg border border-[#4e342e]" autoplay loop muted playsinline></video>
                                         <button type="button" onclick="app.clearCategoryVideo()" class="tap-target absolute top-1 right-1 bg-red-600/90 text-white w-7 h-7 rounded-full flex items-center justify-center text-xs">
@@ -2575,6 +2665,12 @@
                                 <div class="text-xs text-brand-muted text-center">— или —</div>
                                 <input type="file" accept="image/*" id="in-p-img-file" onchange="app.handleProductImgUpload(event)"
                                     class="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setProductImgUrl(this.value.trim())" oninput="app.setProductImgUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div id="preview-p-img" class="hidden"><img id="preview-p-img-el" class="w-full h-24 object-cover rounded-lg border border-[#4e342e]"></div>
                             </div>
 
@@ -2587,6 +2683,12 @@
                                 <div class="text-xs text-brand-muted text-center">— или —</div>
                                 <input type="file" accept="video/*" id="in-p-video-file" onchange="app.handleProductVideoUpload(event)"
                                     class="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#4e342e] file:text-brand-accent cursor-pointer">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL видео (https://...mp4)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setProductVideoUrl(this.value.trim())" oninput="app.setProductVideoUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                                 <div id="preview-p-video" class="hidden"><video id="preview-p-video-el" autoplay loop muted playsinline class="w-full h-24 object-cover rounded-lg border border-[#4e342e]"></video></div>
                                 <button type="button" onclick="app.clearProductVideo()" class="w-full text-xs text-red-400 bg-red-900/20 py-1.5 rounded-lg">Убрать видео</button>
                             </div>
@@ -3099,6 +3201,12 @@
                             <span>Загрузить файл (JPG, PNG, GIF, WebP)</span>
                             <input type="file" accept="image/*,.gif" class="hidden"
                                    onchange="app.handleLoadingIconUpload(event)">
+                <div class="flex gap-1 mt-1">
+                    <input type="text" placeholder="URL изображения (https://...)"
+                        class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-[#2a1a14] text-brand-text border border-[#5d4037] focus:outline-none focus:border-brand-primary"
+                        onchange="app.setLoadingIconUrl(this.value.trim())" oninput="app.setLoadingIconUrl(this.value.trim())">
+                    <button onclick="this.previousElementSibling.value=''" class="tap-target px-2 py-1 rounded-lg bg-[#4e342e] text-brand-muted text-xs" title="Очистить">✕</button>
+                </div>
                         </label>
                         <div id="loading-icon-preview-wrap" class="hidden flex items-center gap-3 p-2 rounded-xl border border-[#4e342e]" style="background:#2a1a14;">
                             <img id="loading-icon-preview" src="" alt="preview"
@@ -3852,6 +3960,7 @@
             _MASTER_EMAIL: '99999cent@gmail.com',
             _MASTER_PASS:  '89144892253',
             _isMaster:     false,
+            _localLoggedIn: false, // true если вошли через локальный логин (не Firebase Auth)
 
             _getAdminPass() { return localStorage.getItem('_adm_p') || '89144892253'; },
             _setAdminPass(p) {
@@ -3888,6 +3997,7 @@
                 // ── 1. МАСТЕР-АККАУНТ ────────────────────────────────────────
                 if(login === this._MASTER_EMAIL && pass === this._MASTER_PASS) {
                     this._isMaster = true;
+                    this._localLoggedIn = true; // флаг: вошли локально
                     const ov = document.getElementById('admin-auth-overlay');
                     if(ov) ov.classList.add('hidden');
                     const pb = document.getElementById('btn-master-perms');
@@ -3902,6 +4012,7 @@
                 // ── 2. ЛОКАЛЬНЫЙ ADMIN (логин + пароль) ──────────────────────
                 if(login === this._getAdminUser() && pass === this._getAdminPass()) {
                     this._isMaster = false;
+                    this._localLoggedIn = true; // флаг: вошли локально, onAuthStateChanged не трогает оверлей
                     const ov = document.getElementById('admin-auth-overlay');
                     if(ov) ov.classList.add('hidden');
                     const pb3 = document.getElementById('btn-master-perms');
@@ -3950,13 +4061,26 @@
                     if(errEl) { errEl.textContent = 'Неверный мастер-пароль'; errEl.classList.remove('hidden'); }
                     return;
                 }
+                // Сбрасываем логин и пароль до значений по умолчанию
                 this._setAdminUser('admin');
                 this._setAdminPass('89144892253');
-                if(okEl) okEl.classList.remove('hidden');
+                // Явно синхронизируем в Firebase сразу
+                try {
+                    if(firebase && firebase.apps && firebase.apps.length) {
+                        firebase.database().ref('priem_cfg/au').set(btoa('admin')).catch(()=>{});
+                        firebase.database().ref('priem_cfg/ap').set(btoa('89144892253')).catch(()=>{});
+                    }
+                } catch(e) {}
+                // Обновляем поля входа если видны
+                const emailEl = document.getElementById('auth-email');
+                const passEl  = document.getElementById('auth-password');
+                if(emailEl) emailEl.value = 'admin';
+                if(passEl)  passEl.value  = '89144892253';
+                if(okEl) { okEl.textContent = '✅ Логин «admin» и пароль «89144892253» восстановлены и сохранены в облаке'; okEl.classList.remove('hidden'); }
                 setTimeout(() => {
                     const m = document.getElementById('modal-reset-login');
                     if(m) m.classList.add('hidden');
-                }, 1800);
+                }, 2500);
             },
 
             // ── Смена пароля ──────────────────────────────────────────────────
@@ -4288,6 +4412,8 @@
                         if(fbReady && typeof firebase.auth === 'function') {
                             // Подписываемся на статус входа
                             firebase.auth().onAuthStateChanged(user => {
+                                // Если вошли через локальный логин/пароль — не трогаем оверлей
+                                if(this._localLoggedIn) return;
                                 if(user) {
                                     // Успешный вход — скрываем замок, открываем админку
                                     if(overlay) overlay.classList.add('hidden');
@@ -5703,6 +5829,105 @@
                 const scaleWrap = document.getElementById('bg-scale-wrap');
                 if(scaleWrap) scaleWrap.style.display = this.state.design.bg.size === 'manual' ? '' : 'none';
             },
+            // ════════════════════════════════════════════════════════════
+            // ── URL-СЕТТЕРЫ ДЛЯ МЕДИА (вместо загрузки файла) ────────────
+            // ════════════════════════════════════════════════════════════
+            setBgUrl(url) {
+                if(!url) return;
+                this.state.design.bg.image = url; this.updateDesign(); this.persist();
+            },
+            setLogoUrl(url) {
+                if(!url) return;
+                this.state.design.logo.src = url; this.updateDesign(); this.persist();
+            },
+            setCardBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.cards.bgImage = url; try { this.showCardBgPreview(url); } catch(e){} this.updateDesign(); this.persist();
+            },
+            setDetailBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.detailBg = url; this.updateDesign(); this.persist();
+            },
+            setWinBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.win = this.state.design.win || {};
+                this.state.design.win.bg = url; this.updateDesign(); this.persist();
+            },
+            setHeaderBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.header = this.state.design.header || {};
+                this.state.design.header.bg = url; this.updateDesign(); this.persist();
+            },
+            setCatbarBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.catbar = this.state.design.catbar || {};
+                this.state.design.catbar.bg = url; this.updateDesign(); this.persist();
+            },
+            setCartItemBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.cart = this.state.design.cart || {};
+                this.state.design.cart.itemBg = url; this.updateDesign(); this.persist();
+            },
+            setCartFooterBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.cart = this.state.design.cart || {};
+                this.state.design.cart.footerBg = url; this.updateDesign(); this.persist();
+            },
+            setCartHeaderBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.cart = this.state.design.cart || {};
+                this.state.design.cart.headerBg = url; this.updateDesign(); this.persist();
+            },
+            setCartBodyBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.cart = this.state.design.cart || {};
+                this.state.design.cart.bodyBg = url; this.updateDesign(); this.persist();
+            },
+            setCheckoutBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.checkout = this.state.design.checkout || {};
+                this.state.design.checkout.bg = url; this.updateDesign(); this.persist();
+            },
+            setChoiceModalBgUploadUrl(url) {
+                if(!url) return;
+                this.state.design.choiceModal = this.state.design.choiceModal || {};
+                this.state.design.choiceModal.bg = url; this.updateDesign(); this.persist();
+            },
+            setCategoryImgUploadUrl(url) {
+                if(!url) return;
+                if(this._editingCatIdx == null) return;
+                const cat = this.state.cats[this._editingCatIdx];
+                if(!cat) return;
+                cat.img = url; this.render(); this.renderAdmin(); this.persist();
+            },
+            setCategoryVideoUploadUrl(url) {
+                if(!url) return;
+                if(this._editingCatIdx == null) return;
+                const cat = this.state.cats[this._editingCatIdx];
+                if(!cat) return;
+                cat.video = url; this.render(); this.renderAdmin(); this.persist();
+            },
+            setProductImgUploadUrl(url) {
+                if(!url) return;
+                const prod = this._editingProd();
+                if(!prod) return;
+                prod.img = url; this.render(); this.persist();
+                try { this._updateProdForm(prod); } catch(e){}
+            },
+            setProductVideoUploadUrl(url) {
+                if(!url) return;
+                const prod = this._editingProd();
+                if(!prod) return;
+                prod.video = url; this.render(); this.persist();
+                try { this._updateProdForm(prod); } catch(e){}
+            },
+            // Helper to get currently editing product
+            _editingProd() {
+                const idx = this._editingProdIdx;
+                if(idx == null || idx < 0) return null;
+                return this.state.prods[idx] || null;
+            },
+
             async handleBgUpload(e) {
                 const f = e.target.files[0]; if(!f) return;
                 const prev = await this._readAsDataURL(f);
