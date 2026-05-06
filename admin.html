@@ -2610,7 +2610,7 @@
         err.textContent = ''; ok.textContent = '';
 
         const ttName    = nameInput.value.trim();
-        const clientAddr= (document.getElementById('new-tt-client-address') || {}).value?.trim() || '';
+        const clientAddr= ((document.getElementById('new-tt-client-address') || {}).value || '').trim();
         const adminName = adminNameInput.value.trim();
         const adminPass = (adminPassInput.value.trim() || '1111');
         const opName    = opNameInput.value.trim();
@@ -2658,7 +2658,7 @@
 
         // Сохраняем новую ТТ в Firebase немедленно
         _saveTTListToCloud();
-        if (_fbDB && _fbApp?._fbSet) {
+        if (_fbDB && _fbApp && _fbApp._fbSet) {
             const fbRef = _fbApp._fbRef(_fbDB, newId === 'tt_1' ? 'priem_cfg' : newId + '/priem_cfg');
             _fbApp._fbSet(fbRef, newTTData).catch(e => console.warn('[Cloud] New TT save error:', e));
         }
@@ -4357,11 +4357,11 @@
         _cloud.connection = { url: cfg.url, interval: cfg.interval, token: cfg.token, operator: cfg.operator };
         // Save Firebase config (stays in localStorage — нужно до подключения к Firebase)
         const fbCfg = {
-            apiKey:      (document.getElementById('fb-apiKey')||{}).value?.trim()||'',
-            databaseURL: (document.getElementById('fb-databaseURL')||{}).value?.trim()||'',
-            projectId:   (document.getElementById('fb-projectId')||{}).value?.trim()||'',
-            appId:       (document.getElementById('fb-appId')||{}).value?.trim()||'',
-            authDomain:  (document.getElementById('fb-authDomain')||{}).value?.trim()||'',
+            apiKey:      ((document.getElementById('fb-apiKey')||{}).value||'').trim()||'',
+            databaseURL: ((document.getElementById('fb-databaseURL')||{}).value||'').trim()||'',
+            projectId:   ((document.getElementById('fb-projectId')||{}).value||'').trim()||'',
+            appId:       ((document.getElementById('fb-appId')||{}).value||'').trim()||'',
+            authDomain:  ((document.getElementById('fb-authDomain')||{}).value||'').trim()||'',
         };
         if (fbCfg.projectId && !fbCfg.authDomain) fbCfg.authDomain = fbCfg.projectId + '.firebaseapp.com';
         saveFBCfg(fbCfg);
@@ -4400,7 +4400,7 @@
         if (!isSuperAdmin()) return;
         const oldP  = document.getElementById('sec-old-pass').value.trim();
         const newP  = document.getElementById('sec-new-pass').value.trim();
-        const newP2 = (document.getElementById('sec-new-pass2')||{}).value?.trim() || newP;
+        const newP2 = ((document.getElementById('sec-new-pass2')||{}).value || '').trim() || newP;
         const err   = document.getElementById('sec-pass-err');
         const ok    = document.getElementById('sec-pass-ok');
         err.textContent = ''; ok.textContent = '';
@@ -4918,7 +4918,7 @@
 
     // ── Глобальная синхронизация: список ТТ → Firebase /global ─────────────────
     async function _saveTTListToCloud() {
-        if (!_fbDB || !_fbApp?._fbSet) return;
+        if (!_fbDB || !_fbApp && _fbApp._fbSet) return;
         try {
             const ref = _fbApp._fbRef(_fbDB, 'global/tt_list');
             await _fbApp._fbSet(ref, { list: getTTList(), updatedAt: new Date().toISOString() });
@@ -4927,7 +4927,7 @@
 
     // Сохраняет данные ТТ в Firebase
     async function _saveTTDataToCloud(ttId) {
-        if (!_fbDB || !_fbApp?._fbSet) return;
+        if (!_fbDB || !_fbApp && _fbApp._fbSet) return;
         const id = ttId || getCurrentTTId();
         const isCurrent = (id === getCurrentTTId());
         try {
@@ -4958,7 +4958,7 @@
 
     // Сохраняет данные текущей ТТ в Firebase
     async function _saveCfgNow() {
-        if (!_fbDB || !_fbApp?._fbSet) return;
+        if (!_fbDB || !_fbApp && _fbApp._fbSet) return;
         try {
             await _saveTTDataToCloud(getCurrentTTId());
             await _saveTTListToCloud();
@@ -4967,7 +4967,7 @@
 
     // Загружает список ТТ из /global и данные всех ТТ из Firebase
     async function _loadAllTTsFromCloud() {
-        if (!_fbDB || !_fbApp?._fbRef) return;
+        if (!_fbDB || !_fbApp && _fbApp._fbRef) return;
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
             const localList = getTTList();
@@ -5031,7 +5031,7 @@
     let _priemCfgFirstSkip = false;
 
     async function loadCfgFromCloud() {
-        if (!_fbDB || !_fbApp?._fbRef) return;
+        if (!_fbDB || !_fbApp && _fbApp._fbRef) return;
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
 
@@ -5134,6 +5134,16 @@
                 // Они загружаются один раз через loadCfgFromCloud (get) и сохраняются через saveUsers()
             });
 
+            // ── 3b. Real-time подписчики — мгновенная синхронизация ─────────────
+            onValue(ref(_fbDB, 'global/bot_subscribers'), (snap) => {
+                const data = snap.val();
+                if (!Array.isArray(data) || data.length === 0) return;
+                if (data.length > (_cloud.subscribers || []).length) {
+                    _cloud.subscribers = data;
+                    try { renderBotSubscribers(); } catch(e) {}
+                }
+            });
+
             // ── 3. Слушаем global/tt_list — чтобы получать новые ТТ с других устройств
             _fbOffGlobal = onValue(ref(_fbDB, 'global/tt_list'), (snap) => {
                 const gd = snap.val();
@@ -5214,7 +5224,7 @@
     }
 
     async function fbWriteOrder(order) {
-        if (!_fbDB || !_fbApp?._fbSet) return;
+        if (!_fbDB || !_fbApp && _fbApp._fbSet) return;
         try {
             const safeId = String(order.id).replace(/[.#$\[\]]/g, '_');
             const orderRef = _fbApp._fbRef(_fbDB, _fbOrdersPath() + '/' + safeId);
@@ -5226,11 +5236,11 @@
         const st = document.getElementById('fb-conn-status');
         if (st) st.textContent = '⏳ Проверка...';
         const fbCfg = {
-            apiKey:      (document.getElementById('fb-apiKey')||{}).value?.trim()||'',
-            databaseURL: (document.getElementById('fb-databaseURL')||{}).value?.trim()||'',
-            projectId:   (document.getElementById('fb-projectId')||{}).value?.trim()||'',
-            appId:       (document.getElementById('fb-appId')||{}).value?.trim()||'',
-            authDomain:  (document.getElementById('fb-authDomain')||{}).value?.trim()||'',
+            apiKey:      ((document.getElementById('fb-apiKey')||{}).value||'').trim()||'',
+            databaseURL: ((document.getElementById('fb-databaseURL')||{}).value||'').trim()||'',
+            projectId:   ((document.getElementById('fb-projectId')||{}).value||'').trim()||'',
+            appId:       ((document.getElementById('fb-appId')||{}).value||'').trim()||'',
+            authDomain:  ((document.getElementById('fb-authDomain')||{}).value||'').trim()||'',
         };
         if (!fbCfg.apiKey || !fbCfg.databaseURL) {
             if (st) st.textContent = '❌ Заполните API Key и Database URL';
@@ -5514,10 +5524,18 @@
 
     function _syncSubscribersToAllTTs(subs) {
         if (!_fbDB || !_fbApp || !_fbApp._fbSet) return;
-        // Единственный источник истины — /global/bot_subscribers
-        // Не пишем в priem_cfg — это вызывает конфликт с _saveTTDataToCloud
+        // 1. Всегда пишем в /global/bot_subscribers (главный источник)
         _fbApp._fbSet(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'), subs || []).catch(() => {});
-        console.log('[Subs] Сохранено в global/bot_subscribers:', (subs || []).length, 'подписчиков');
+        // 2. Копируем в priem_cfg каждой ТТ (чтобы другие устройства видели через свой прием_cfg)
+        const list = getTTList();
+        list.forEach(tt => {
+            const path = (tt.id === 'tt_1' ? '' : tt.id + '/') + 'priem_cfg';
+            // Только поле subscribers — не перетираем всё priem_cfg
+            try {
+                _fbApp._fbRef(_fbDB, path + '/subscribers');
+                _fbApp._fbSet(_fbApp._fbRef(_fbDB, path + '/subscribers'), subs || []).catch(() => {});
+            } catch(e) {}
+        });
     }
 
     // Периодическая сверка подписчиков с ТТ1 (каждые 5 секунд)
@@ -5531,19 +5549,19 @@
         if (!_fbDB || !_fbApp || !_fbApp._fbRef) return;
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
+            // Читаем из главного источника (global)
             const snap = await get(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'));
             const globalSubs = snap.val();
-            if (!Array.isArray(globalSubs) || globalSubs.length === 0) return;
+            if (!Array.isArray(globalSubs)) return;
 
-            const localLen = (_cloud.subscribers || []).length;
-            const globalLen = globalSubs.length;
-            // Синхронизируем если глобальных подписчиков больше или данные отличаются
-            if (localLen !== globalLen || JSON.stringify(_cloud.subscribers) !== JSON.stringify(globalSubs)) {
-                console.log('[Subs] Sync:', localLen, '→', globalLen, 'подписчиков');
+            // Сравниваем с локальным
+            const localStr  = JSON.stringify(_cloud.subscribers || []);
+            const globalStr = JSON.stringify(globalSubs);
+            if (localStr !== globalStr) {
+                console.log('[Subs] Sync: обновляем локальных подписчиков из global');
                 _cloud.subscribers = globalSubs;
-                // Обновляем UI если вкладка подписчиков открыта
-                try { renderBotSubscribers(); } catch(e) {}
-                // НЕ вызываем saveCfgToCloud() — избегаем циклических записей
+                // Если мы в ТТ где нет своих записей — обновляем тихо
+                saveCfgToCloud();
             }
         } catch(e) { /* тихо */ }
     }
@@ -5555,24 +5573,9 @@
             const snap = await get(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'));
             const data = snap.val();
             if (Array.isArray(data) && data.length > 0) {
-                // Глобальные подписчики найдены
                 _cloud.subscribers = data;
-                console.log('[Subs] Загружено из global:', data.length, 'подписчиков');
-                return;
             }
-            // global пустой — ищем в priem_cfg ТТ1 (миграция старых данных)
-            const tt1Snap = await get(_fbApp._fbRef(_fbDB, 'priem_cfg/subscribers'));
-            const tt1Subs = tt1Snap.val();
-            if (Array.isArray(tt1Subs) && tt1Subs.length > 0) {
-                console.log('[Subs] Миграция из priem_cfg ТТ1:', tt1Subs.length, 'подписчиков → global');
-                _cloud.subscribers = tt1Subs;
-                // Записываем в global — теперь это источник истины
-                _fbApp._fbSet(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'), tt1Subs).catch(() => {});
-                return;
-            }
-            // Нет нигде — подписчиков нет
-            console.log('[Subs] Подписчиков в global и priem_cfg не найдено');
-        } catch(e) { console.warn('[Subs] Ошибка загрузки глобальных подписчиков:', e.message); }
+        } catch(e) { console.warn('[Subs] Cannot load global:', e.message); }
     }
 
     function isSubPhone(phone) {
@@ -5611,10 +5614,6 @@
         if (t1) t1.value = c.tplNew || t1.value;
         if (t2) t2.value = c.tplAccepted || t2.value;
         if (t3) t3.value = c.tplReady || t3.value;
-        const t4 = document.getElementById('bot-tpl-issued');
-        if (t4) t4.value = c.tplIssued || t4.value;
-        const t5 = document.getElementById('bot-tpl-welcome');
-        if (t5) t5.value = c.tplWelcome || t5.value;
         updateBotStatusUI();
         renderBotSubscribers();
         // Супер-админ — показать блокировку
@@ -5649,10 +5648,6 @@
         if (t1) c.tplNew = t1.value;
         if (t2) c.tplAccepted = t2.value;
         if (t3) c.tplReady = t3.value;
-        const t4 = document.getElementById('bot-tpl-issued');
-        if (t4) c.tplIssued = t4.value;
-        const t5 = document.getElementById('bot-tpl-welcome');
-        if (t5) c.tplWelcome = t5.value;
         saveBotCfgStore(c);
         updateBotStatusUI();
         setTimeout(startBotAutopoll, 500);
@@ -5814,7 +5809,7 @@
         const el = document.getElementById('bot-test-result');
         if (el) el.textContent = '⏳ Проверка...';
 
-        const token = (document.getElementById('bot-token') || {}).value?.trim() || getBotCfg().token || '';
+        const token = (document.getElementById('bot-token') || {}).value || getBotCfg().token || getBotCfg().token || '';
         const dbg = document.getElementById('bot-token-debug');
         const prv = document.getElementById('bot-token-preview');
         if (dbg && prv) {
@@ -5913,60 +5908,50 @@
 
             console.log('[Bot] /updates получено:', updates.length, 'событий; маркер:', _botUpdatesMarker);
 
-            // ── Коды верификации больше не читаем из Firebase — работаем только через botCode в заказе ──
+            // ── Загружаем коды верификации из Firebase как ЗАПАСНОЙ вариант ──────
             let verifCodes = {};
+            try {
+                if (_fbDB && _fbApp && typeof _fbApp._fbRef === 'function') {
+                    const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
+                    const vcSnap = await get(_fbApp._fbRef(_fbDB, 'verification_codes'));
+                    verifCodes = vcSnap.val() || {};
+                    console.log('[VerifCodes] Загружено из Firebase:', Object.keys(verifCodes).length, 'кодов');
+                }
+            } catch(e) {
+                console.warn('[VerifCodes] Ошибка чтения из Firebase:', e.message);
+            }
+
             const verifDbUpdates = [];
             let newLinked = 0;
 
-            for (const upd of updates) {
-                if (upd.update_type !== 'message_created') continue;
+            updates.forEach(upd => {
+                if (upd.update_type !== 'message_created') return;
                 const msg = upd.message;
-                if (!msg) continue;
+                if (!msg) return;
                 const sender = msg.sender || msg.from;
-                if (!sender || !sender.user_id) continue;
+                if (!sender || !sender.user_id) return;
 
                 const userId = String(sender.user_id);
                 const text   = ((msg.body && msg.body.text) || msg.text || '').trim();
-                const senderName = (sender.name || sender.username || '').trim().toLowerCase();
 
                 // ── Добавляем/обновляем подписчика ───────────────────────────────
                 const existing = subs.find(x => String(x.userId) === userId);
                 if (!existing) {
                     subs.push({ userId, name: sender.name || sender.username || userId, username: sender.username || '', phone: '' });
                     changed = true;
-                    // Отправляем приветствие новому подписчику
-                    _sendNewSubscriberWelcome(userId, sender.name || '');
                 } else if (sender.name && !existing.name) {
                     existing.name = sender.name; changed = true;
                 }
                 const cur = subs.find(x => String(x.userId) === userId);
-
-                // ── Авто-привязка: ищем заказ где имя клиента совпадает с именем подписчика ──
-                // Работает если подписчик пишет боту ПОСЛЕ оформления заказа
-                if (cur && !cur.phone && senderName.length >= 2) {
-                    const nameMatches = allOrders.filter(o => {
-                        if (!o.customerPhone || !o.customerName) return false;
-                        return o.customerName.trim().toLowerCase() === senderName;
-                    });
-                    // Берём только если одно уникальное совпадение (нет риска перепутать)
-                    const uniquePhones = [...new Set(nameMatches.map(o => normPhone(o.customerPhone)))];
-                    if (uniquePhones.length === 1 && uniquePhones[0]) {
-                        cur.phone = uniquePhones[0];
-                        changed = true;
-                        console.log('[AutoLink] ✅ Авто-привязка по имени:', senderName, '→', cur.phone);
-                        maxBotRequest('POST', '/messages?user_id=' + userId, {
-                            text: '✅ Готово! Буду присылать статус заказов.',
-                            format: 'markdown'
-                        });
-                    }
-                }
 
                 // ── 4-значный код верификации ─────────────────────────────────────
                 if (/^\d{4}$/.test(text)) {
                     console.log('[VerifCode] Получен код:', text, 'от userId:', userId);
                     let linkedPhone = '', linkedName = sender.name || userId, verifKey = '';
 
-                    // 1. Ищем по allOrders текущей ТТ
+                    // 1. Ищем по allOrders — ПЕРВИЧНЫЙ механизм
+                    //    botCode — прямое поле в заказе (самый надёжный)
+                    //    receiptNum — запасной для старых заказов
                     const mo = allOrders.find(o => {
                         if (o.botCode && String(o.botCode) === text) return true;
                         if (o.receiptNum) {
@@ -5978,51 +5963,31 @@
                     if (mo) {
                         linkedPhone = mo.customerPhone || '';
                         linkedName  = mo.customerName  || linkedName;
-                        console.log('[VerifCode] ✅ Найден в allOrders botCode=' + (mo.botCode||mo.receiptNum), '→', linkedPhone);
+                        console.log('[VerifCode] ✅ Найден по заказу botCode=' + (mo.botCode||mo.receiptNum), '→', linkedPhone);
                     }
 
-                    // 2. Если не нашли — ищем в ДРУГИХ ТТ через Firebase
-                    if (!linkedPhone && _fbDB && _fbApp && typeof _fbApp._fbRef === 'function') {
-                        try {
-                            const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
-                            const ttList = getTTList();
-                            for (const tt of ttList) {
-                                if (tt.id === getCurrentTTId()) continue; // уже проверили
-                                const ordersPath = tt.id === 'tt_1' ? 'orders' : tt.id + '/orders';
-                                const ordersSnap = await get(_fbApp._fbRef(_fbDB, ordersPath));
-                                const ordersData = ordersSnap.val() || {};
-                                const ttOrders = Object.values(ordersData);
-                                const ttMatch = ttOrders.find(o => {
-                                    if (o.botCode && String(o.botCode) === text) return true;
-                                    if (o.receiptNum) {
-                                        const code4 = String(o.receiptNum).padStart(4,'0').slice(-4);
-                                        if (code4 === text) return true;
-                                    }
-                                    return false;
-                                });
-                                if (ttMatch) {
-                                    linkedPhone = ttMatch.customerPhone || '';
-                                    linkedName  = ttMatch.customerName  || linkedName;
-                                    console.log('[VerifCode] ✅ Найден в ТТ', tt.name, '→', linkedPhone);
-                                    break;
-                                }
-                            }
-                        } catch(e) { console.warn('[VerifCode] Ошибка поиска по другим ТТ:', e.message); }
+                    // 2. Если не нашли в orders — ищем в verification_codes Firebase
+                    if (!linkedPhone && verifCodes[text] && !verifCodes[text].used) {
+                        linkedPhone = verifCodes[text].phone || '';
+                        linkedName  = verifCodes[text].name  || linkedName;
+                        verifKey    = text;
+                        console.log('[VerifCode] ✅ Найден в Firebase verification_codes →', linkedPhone);
                     }
-
-                    // 3. Запасной вариант через verification_codes убран (Permission denied)
-                    // Используем только botCode из заказа
 
                     if (!linkedPhone) {
-                        console.log('[VerifCode] ❌ Код', text, 'не найден нигде');
-                        // Сообщаем пользователю что код не найден
-                        maxBotRequest('POST', '/messages?user_id=' + userId, {
-                            text: '❌ Код не найден. Убедитесь что вводите 4 цифры номера чека из подтверждения заказа.',
-                            format: 'markdown'
-                        });
+                        console.log('[VerifCode] ❌ Код', text, 'не найден ни в заказах, ни в Firebase');
+                        console.log('  allOrders с receiptNum:', allOrders.filter(o=>o.receiptNum).map(o=>({id:o.id,receiptNum:o.receiptNum,phone:o.customerPhone})));
+                        console.log('  verifCodes:', verifCodes);
                     }
 
                     if (linkedPhone) {
+                        // Помечаем код как использованный в Firebase
+                        if (verifKey && _fbDB && _fbApp && _fbApp._fbSet) {
+                            verifDbUpdates.push(_fbApp._fbSet(
+                                _fbApp._fbRef(_fbDB, 'verification_codes/' + verifKey),
+                                { used: true, linkedUserId: userId, linkedAt: Date.now() }
+                            ));
+                        }
                         // Привязываем телефон к подписчику
                         const existingByPhone = subs.find(x => normPhone(x.phone) === normPhone(linkedPhone));
                         if (existingByPhone) {
@@ -6039,7 +6004,7 @@
                         });
                         newLinked++; changed = true;
                         console.log('[VerifCode] ✅ Привязан userId:', userId, '→', linkedPhone);
-                        continue; // переходим к следующему update
+                        return; // переходим к следующему update
                     }
                 }
 
@@ -6058,9 +6023,9 @@
                 if (phoneFromText && cur && !cur.phone) {
                     cur.phone = phoneFromText; changed = true; newLinked++;
                 }
-            } // end for...of updates
+            });
 
-            // (verification_codes убраны — используем botCode в самом заказе)
+            await Promise.all(verifDbUpdates).catch(e => console.warn('[VerifCodes] Ошибка обновления used:', e));
 
         } else if (updData && updData.error) {
             console.warn('[Bot] /updates ошибка:', updData.message);
@@ -6074,7 +6039,6 @@
         const chatsNote = chats.length > 0 ? ` (из /chats: ${chats.length})` : '';
         if (el) el.textContent = `Подписчиков: ${subs.length}${chatsNote}`;
     }
-
     function renderBotSubscribers() {
         const searchEl = document.getElementById('sub-search');
         if (searchEl && searchEl.value) { filterSubscribers(searchEl.value); return; }
@@ -6707,7 +6671,7 @@
         // Удаляем из памяти — без изменения статуса, без логов, без отчётов
         allOrders = allOrders.filter(o => !idsSet.has(String(o.id)));
         // Удаляем из Firebase если подключён
-        if (_fbDB && _fbApp?._fbRef) {
+        if (_fbDB && _fbApp && _fbApp._fbRef) {
             try {
                 const { remove } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
                 for (const id of ids) {
@@ -6867,20 +6831,20 @@
     }
 
     function schedTypeChanged() {
-        const type = document.querySelector('input[name="sched-type"]:checked')?.value || 'datetime';
+        const type = (document.querySelector('input[name="sched-type"]:checked') || {}).value || 'datetime';
         document.getElementById('sched-datetime-block').style.display = type === 'datetime' ? 'flex' : 'none';
         document.getElementById('sched-days-block').style.display = type === 'days' ? 'block' : 'none';
         document.getElementById('sched-hours-block').style.display = type === 'hours' ? 'flex' : 'none';
     }
 
     function addBlockSchedule() {
-        const type = document.querySelector('input[name="sched-type"]:checked')?.value || 'datetime';
-        const target = document.getElementById('sched-target')?.value || 'all';
+        const type = (document.querySelector('input[name="sched-type"]:checked') || {}).value || 'datetime';
+        const target = (document.getElementById('sched-target') || {}).value || 'all';
         const schedules = getBlockSchedules();
 
         if (type === 'datetime') {
-            const date = document.getElementById('sched-date')?.value;
-            const time = document.getElementById('sched-time')?.value || '00:00';
+            const date = (document.getElementById('sched-date') || {}).value;
+            const time = (document.getElementById('sched-time') || {}).value || '00:00';
             if (!date) { alert('Выберите дату'); return; }
             const ts = new Date(date + 'T' + time).getTime();
             if (ts < Date.now()) { alert('Дата в прошлом'); return; }
@@ -6888,11 +6852,11 @@
         } else if (type === 'days') {
             const days = Array.from(document.querySelectorAll('.sched-day-chk:checked')).map(c => parseInt(c.value));
             if (!days.length) { alert('Выберите хотя бы один день недели'); return; }
-            const time = document.getElementById('sched-day-time')?.value || '00:00';
+            const time = (document.getElementById('sched-day-time') || {}).value || '00:00';
             const dayNames = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
             schedules.push({ id: Date.now(), type: 'days', target, days, time, label: days.map(d => dayNames[d]).join(', ') + ' в ' + time });
         } else if (type === 'hours') {
-            const hours = parseInt(document.getElementById('sched-hours')?.value || '24');
+            const hours = parseInt((document.getElementById('sched-hours') || {}).value || '24');
             const ts = Date.now() + hours * 3600000;
             schedules.push({ id: Date.now(), type: 'hours', target, ts, hours, label: 'Через ' + hours + ' ч.' });
         }
@@ -6922,7 +6886,7 @@
             el.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:8px 0">Нет запланированных блокировок</div>';
             return;
         }
-        const targetName = id => id === 'all' ? 'Все' : (getUsers().find(u => u.id === id)?.name || id);
+        const targetName = id => id === 'all' ? 'Все' : (getUsers().find(u => u.id === id) || {}).name || id;
         el.innerHTML = schedules.map(s => `
             <div class="sched-badge">
                 ⏰ ${esc(s.label)} → ${esc(targetName(s.target))}
@@ -6979,12 +6943,12 @@
                 if (diff > 0) {
                     const alertCfg = _getAlertCfgForTT(_getSelectedAlertTTId());
                     // sc1: предупреждение за alertCfg.sc1.hours часов
-                    const sc1h = (alertCfg.sc1?.hours || 3) * (alertCfg.sc1?.unit === 'days' ? 86400000 : 3600000);
-                    if (diff <= sc1h && !s[`_warnSc1_${alertCfg.sc1?.hours}`]) {
-                        s[`_warnSc1_${alertCfg.sc1?.hours}`] = true;
+                    const sc1h = ((alertCfg.sc1 || {}).hours || 3) * ((alertCfg.sc1 || {}).unit === 'days' ? 86400000 : 3600000);
+                    if (diff <= sc1h && !s[`_warnSc1_${(alertCfg.sc1 || {}).hours}`]) {
+                        s[`_warnSc1_${(alertCfg.sc1 || {}).hours}`] = true;
                         const extraVars = {
-                            hours: alertCfg.sc1?.hours || 3,
-                            unit: alertCfg.sc1?.unit === 'days' ? 'дн.' : 'ч.'
+                            hours: (alertCfg.sc1 || {}).hours || 3,
+                            unit: (alertCfg.sc1 || {}).unit === 'days' ? 'дн.' : 'ч.'
                         };
                         triggerBlockAlert(1, [], extraVars);
                     }
@@ -7135,17 +7099,17 @@
         const el = id => document.getElementById(id);
 
         // objectName comes from TT name — no field needed
-        if (el('alert-sc1-enabled')) el('alert-sc1-enabled').checked = !!c.sc1?.enabled;
-        if (el('alert-sc1-hours'))   el('alert-sc1-hours').value   = c.sc1?.hours ?? 3;
-        if (el('alert-sc1-unit'))    el('alert-sc1-unit').value    = c.sc1?.unit  || 'hours';
-        if (el('alert-sc1-max-text')) el('alert-sc1-max-text').value = c.sc1?.maxText || ALERT_DEFAULTS.sc1.maxText;
-        if (el('alert-sc1-tg-text'))  el('alert-sc1-tg-text').value  = c.sc1?.tgText  || ALERT_DEFAULTS.sc1.tgText;
-        if (el('alert-sc2-enabled')) el('alert-sc2-enabled').checked = !!c.sc2?.enabled;
-        if (el('alert-sc2-max-text')) el('alert-sc2-max-text').value = c.sc2?.maxText || ALERT_DEFAULTS.sc2.maxText;
-        if (el('alert-sc2-tg-text'))  el('alert-sc2-tg-text').value  = c.sc2?.tgText  || ALERT_DEFAULTS.sc2.tgText;
-        if (el('alert-sc3-enabled')) el('alert-sc3-enabled').checked = !!c.sc3?.enabled;
-        if (el('alert-sc3-max-text')) el('alert-sc3-max-text').value = c.sc3?.maxText || ALERT_DEFAULTS.sc3.maxText;
-        if (el('alert-sc3-tg-text'))  el('alert-sc3-tg-text').value  = c.sc3?.tgText  || ALERT_DEFAULTS.sc3.tgText;
+        if (el('alert-sc1-enabled')) el('alert-sc1-enabled').checked = !!(c.sc1 || {}).enabled;
+        if (el('alert-sc1-hours'))   el('alert-sc1-hours').value   = (c.sc1 || {}).hours ?? 3;
+        if (el('alert-sc1-unit'))    el('alert-sc1-unit').value    = (c.sc1 || {}).unit  || 'hours';
+        if (el('alert-sc1-max-text')) el('alert-sc1-max-text').value = (c.sc1 || {}).maxText || ALERT_DEFAULTS.sc1.maxText;
+        if (el('alert-sc1-tg-text'))  el('alert-sc1-tg-text').value  = (c.sc1 || {}).tgText  || ALERT_DEFAULTS.sc1.tgText;
+        if (el('alert-sc2-enabled')) el('alert-sc2-enabled').checked = !!(c.sc2 || {}).enabled;
+        if (el('alert-sc2-max-text')) el('alert-sc2-max-text').value = (c.sc2 || {}).maxText || ALERT_DEFAULTS.sc2.maxText;
+        if (el('alert-sc2-tg-text'))  el('alert-sc2-tg-text').value  = (c.sc2 || {}).tgText  || ALERT_DEFAULTS.sc2.tgText;
+        if (el('alert-sc3-enabled')) el('alert-sc3-enabled').checked = !!(c.sc3 || {}).enabled;
+        if (el('alert-sc3-max-text')) el('alert-sc3-max-text').value = (c.sc3 || {}).maxText || ALERT_DEFAULTS.sc3.maxText;
+        if (el('alert-sc3-tg-text'))  el('alert-sc3-tg-text').value  = (c.sc3 || {}).tgText  || ALERT_DEFAULTS.sc3.tgText;
 
         renderMaxRecipients(c.maxRecipients || []);
         renderTgRecipients(c.tgRecipients || []);
@@ -7477,7 +7441,7 @@
     }
 
     async function executeTgBroadcast() {
-        const text = (document.getElementById('tg-bc-text') || {}).value?.trim() || '';
+        const text = ((document.getElementById('tg-bc-text') || {}).value || '').trim() || '';
         if (!text) { alert('Введите текст сообщения'); return; }
         const chatIds = Array.from(document.querySelectorAll('.tg-bc-chk:checked')).map(c => c.value);
         if (!chatIds.length) { alert('Выберите хотя бы одного получателя'); return; }
@@ -8187,7 +8151,7 @@
     function executeFreeDays() {
         const ttId  = (document.getElementById('free-days-tt') || {}).value;
         const days  = parseInt((document.getElementById('free-days-count') || {}).value) || 0;
-        const reason= (document.getElementById('free-days-reason') || {}).value?.trim() || 'Бесплатные дни';
+        const reason= ((document.getElementById('free-days-reason') || {}).value || '').trim() || 'Бесплатные дни';
         if (!ttId || days < 1) { alert('Укажите ТТ и количество дней'); return; }
         const tt = getTTList().find(t => t.id === ttId);
         const newDate = _addDaysToTT(ttId, days, {
@@ -8261,7 +8225,7 @@
                     </div>
                     <div style="background:white;border-radius:8px;padding:8px;text-align:center">
                         <div style="font-size:10px;color:#6b7280;text-transform:uppercase">Начало</div>
-                        <div style="font-size:12px;font-weight:700;color:#374151">${hist.length ? hist[hist.length-1].paidAt?.slice(0,10) || '—' : '—'}</div>
+                        <div style="font-size:12px;font-weight:700;color:#374151">${hist.length ? hist[hist.length-1].paidAt ? hist[hist.length-1].paidAt.slice(0,10) : '' || '—' : '—'}</div>
                     </div>
                     <div style="background:white;border-radius:8px;padding:8px;text-align:center">
                         <div style="font-size:10px;color:#6b7280;text-transform:uppercase">Окончание</div>
@@ -8281,7 +8245,7 @@
                                 <span style="color:#dc2626;font-size:13px;font-weight:700">🔴 Блокировка</span>
                                 <span style="font-size:11px;color:#9ca3af">${fmtDT(e.blockedAt)}</span>
                             </div>
-                            <div style="font-size:12px;color:#dc2626;margin-top:4px">Заблокировано с ${e.blockedAt?.slice(0,10)||'?'} по ${e.unblockedAt?.slice(0,10)||'наст. момент'}</div>
+                            <div style="font-size:12px;color:#dc2626;margin-top:4px">Заблокировано с ${(e.blockedAt || {}).slice(0,10)||'?'} по ${(e.unblockedAt || {}).slice(0,10)||'наст. момент'}</div>
                             <div style="font-size:12px;color:#6b7280">Причина: ${esc(e.reason || 'Истечение подписки')}</div>
                         </div>`;
                     }
@@ -8404,7 +8368,7 @@
         prev.style.display = enabled ? '' : 'none';
         if (enabled && next) {
             const today = chitaToday();
-            const cur   = (_cloud.counter?.date === today ? (_cloud.counter?.val || 0) : 0);
+            const cur   = ((_cloud.counter || {}).date === today ? ((_cloud.counter || {}).val || 0) : 0);
             next.textContent = cur + 1;
         }
     }
@@ -8419,7 +8383,7 @@
         const a = getAppearance();
         if (!a.autoReceiptNum) return;
         const today = chitaToday();
-        const cur = (_cloud.counter?.date === today ? (_cloud.counter?.val || 0) : 0);
+        const cur = ((_cloud.counter || {}).date === today ? ((_cloud.counter || {}).val || 0) : 0);
         const inp = document.getElementById('accept-num-input');
         if (inp && !inp.value) inp.value = cur + 1;
     }
@@ -8427,7 +8391,7 @@
     // Сброс счётчика каждый день — вызываем при старте и каждый час
     function checkDailyCounterReset() {
         const today = chitaToday();
-        if (_cloud.counter?.date !== today) {
+        if ((_cloud.counter || {}).date !== today) {
             _cloud.counter = { date: today, val: 0 };
             saveCfgToCloud();
             console.log('[Counter] Сброс счётчика для', today);
@@ -8498,6 +8462,7 @@
     // Init Firebase if configured, otherwise fall back to HTTP polling
     startBlockScheduleChecker();
     checkAllTTSubscriptions();
+    startSubscriberSyncChecker();
     startSubscriberSyncChecker();                   // также вызывает updateLoginSubDays
     setInterval(checkAllTTSubscriptions, 60000);
     setTimeout(updateLoginSubDays, 100);         // повторно — все функции точно определены
