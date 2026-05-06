@@ -5901,12 +5901,12 @@
             const verifDbUpdates = [];
             let newLinked = 0;
 
-            updates.forEach(upd => {
-                if (upd.update_type !== 'message_created') return;
+            for (const upd of updates) {
+                if (upd.update_type !== 'message_created') continue;
                 const msg = upd.message;
-                if (!msg) return;
+                if (!msg) continue;
                 const sender = msg.sender || msg.from;
-                if (!sender || !sender.user_id) return;
+                if (!sender || !sender.user_id) continue;
 
                 const userId = String(sender.user_id);
                 const text   = ((msg.body && msg.body.text) || msg.text || '').trim();
@@ -6034,7 +6034,7 @@
                         });
                         newLinked++; changed = true;
                         console.log('[VerifCode] ✅ Привязан userId:', userId, '→', linkedPhone);
-                        return; // переходим к следующему update
+                        continue; // переходим к следующему update
                     }
                 }
 
@@ -6053,7 +6053,7 @@
                 if (phoneFromText && cur && !cur.phone) {
                     cur.phone = phoneFromText; changed = true; newLinked++;
                 }
-            });
+            } // end for...of updates
 
             await Promise.all(verifDbUpdates).catch(e => console.warn('[VerifCodes] Ошибка обновления used:', e));
 
