@@ -2873,9 +2873,9 @@
             }
         }
         if (!_cloud._usersLocalVersion) {
-            if (data.security)                   _cloud.security    = data.security;
-            if (Array.isArray(data.subscribers)) _cloud.subscribers = data.subscribers;
-            if (Array.isArray(data.history))     _cloud.history     = data.history;
+            if (data.security)               _cloud.security = data.security;
+            // subscribers — НЕ загружаем из priem_cfg, только из /global/bot_subscribers
+            if (Array.isArray(data.history)) _cloud.history  = data.history;
         }
         if (data.appearance)                     _cloud.appearance  = data.appearance;
         if (data.notif)                          _cloud.notif       = data.notif;
@@ -4942,7 +4942,7 @@
                 history:    (isCurrent ? (_cloud.history    || []) : []).slice(0, 500),
                 appearance:  isCurrent ? (_cloud.appearance || {}) : {},
                 bot:         isCurrent ? (_cloud.bot        || {}) : {},
-                subscribers: isCurrent ? (_cloud.subscribers|| []) : [],
+                subscribers: [], // хранятся только в /global/bot_subscribers
                 notif:       isCurrent ? (_cloud.notif      || {}) : {},
                 botAlerts:   isCurrent ? (_cloud.botAlerts  || {}) : {},
                 subscription: (() => { try { return JSON.parse(localStorage.getItem('tt_sub_' + id) || 'null'); } catch { return null; } })(),
@@ -5171,6 +5171,11 @@
             // ── 4. Загружаем настройки и подписчиков ─────────────────────────────
             await loadCfgFromCloud();
             await loadGlobalSubscribers(); // загружаем общих подписчиков сразу
+
+            // Если локальные подписчики есть, а global был пустой — синхронизируем
+            if ((_cloud.subscribers || []).length > 0) {
+                _syncSubscribersToAllTTs(_cloud.subscribers);
+            }
             _subscribeAllTTsCfg(getTTList(), ref, onValue);
 
             // Если форма входа открыта — обновляем (Firebase загрузил пользователей)
@@ -5509,15 +5514,10 @@
 
     function _syncSubscribersToAllTTs(subs) {
         if (!_fbDB || !_fbApp || !_fbApp._fbSet) return;
-        // 1. Главный источник — /global/bot_subscribers
+        // Единственный источник истины — /global/bot_subscribers
+        // Не пишем в priem_cfg — это вызывает конфликт с _saveTTDataToCloud
         _fbApp._fbSet(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'), subs || []).catch(() => {});
-        // 2. Синхронизируем в priem_cfg каждой ТТ чтобы все устройства получили обновлённый список
-        const list = getTTList();
-        list.forEach(tt => {
-            const path = (tt.id === 'tt_1' ? '' : tt.id + '/') + 'priem_cfg/subscribers';
-            _fbApp._fbSet(_fbApp._fbRef(_fbDB, path), subs || []).catch(() => {});
-        });
-        console.log('[Subs] Синхронизировано', (subs||[]).length, 'подписчиков по', list.length, 'ТТ');
+        console.log('[Subs] Сохранено в global/bot_subscribers:', (subs || []).length, 'подписчиков');
     }
 
     // Периодическая сверка подписчиков с ТТ1 (каждые 5 секунд)
@@ -5555,9 +5555,24 @@
             const snap = await get(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'));
             const data = snap.val();
             if (Array.isArray(data) && data.length > 0) {
+                // Глобальные подписчики найдены
                 _cloud.subscribers = data;
+                console.log('[Subs] Загружено из global:', data.length, 'подписчиков');
+                return;
             }
-        } catch(e) { console.warn('[Subs] Cannot load global:', e.message); }
+            // global пустой — ищем в priem_cfg ТТ1 (миграция старых данных)
+            const tt1Snap = await get(_fbApp._fbRef(_fbDB, 'priem_cfg/subscribers'));
+            const tt1Subs = tt1Snap.val();
+            if (Array.isArray(tt1Subs) && tt1Subs.length > 0) {
+                console.log('[Subs] Миграция из priem_cfg ТТ1:', tt1Subs.length, 'подписчиков → global');
+                _cloud.subscribers = tt1Subs;
+                // Записываем в global — теперь это источник истины
+                _fbApp._fbSet(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'), tt1Subs).catch(() => {});
+                return;
+            }
+            // Нет нигде — подписчиков нет
+            console.log('[Subs] Подписчиков в global и priem_cfg не найдено');
+        } catch(e) { console.warn('[Subs] Ошибка загрузки глобальных подписчиков:', e.message); }
     }
 
     function isSubPhone(phone) {
@@ -5898,19 +5913,8 @@
 
             console.log('[Bot] /updates получено:', updates.length, 'событий; маркер:', _botUpdatesMarker);
 
-            // ── Загружаем коды верификации из Firebase как ЗАПАСНОЙ вариант ──────
+            // ── Коды верификации больше не читаем из Firebase — работаем только через botCode в заказе ──
             let verifCodes = {};
-            try {
-                if (_fbDB && _fbApp && typeof _fbApp._fbRef === 'function') {
-                    const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
-                    const vcSnap = await get(_fbApp._fbRef(_fbDB, 'verification_codes'));
-                    verifCodes = vcSnap.val() || {};
-                    console.log('[VerifCodes] Загружено из Firebase:', Object.keys(verifCodes).length, 'кодов');
-                }
-            } catch(e) {
-                console.warn('[VerifCodes] Ошибка чтения из Firebase:', e.message);
-            }
-
             const verifDbUpdates = [];
             let newLinked = 0;
 
@@ -6006,13 +6010,8 @@
                         } catch(e) { console.warn('[VerifCode] Ошибка поиска по другим ТТ:', e.message); }
                     }
 
-                    // 3. Запасной вариант — verification_codes Firebase
-                    if (!linkedPhone && verifCodes[text] && !verifCodes[text].used) {
-                        linkedPhone = verifCodes[text].phone || '';
-                        linkedName  = verifCodes[text].name  || linkedName;
-                        verifKey    = text;
-                        console.log('[VerifCode] ✅ Найден в Firebase verification_codes →', linkedPhone);
-                    }
+                    // 3. Запасной вариант через verification_codes убран (Permission denied)
+                    // Используем только botCode из заказа
 
                     if (!linkedPhone) {
                         console.log('[VerifCode] ❌ Код', text, 'не найден нигде');
@@ -6024,13 +6023,6 @@
                     }
 
                     if (linkedPhone) {
-                        // Помечаем код как использованный в Firebase
-                        if (verifKey && _fbDB && _fbApp && _fbApp._fbSet) {
-                            verifDbUpdates.push(_fbApp._fbSet(
-                                _fbApp._fbRef(_fbDB, 'verification_codes/' + verifKey),
-                                { used: true, linkedUserId: userId, linkedAt: Date.now() }
-                            ));
-                        }
                         // Привязываем телефон к подписчику
                         const existingByPhone = subs.find(x => normPhone(x.phone) === normPhone(linkedPhone));
                         if (existingByPhone) {
@@ -6068,7 +6060,7 @@
                 }
             } // end for...of updates
 
-            await Promise.all(verifDbUpdates).catch(e => console.warn('[VerifCodes] Ошибка обновления used:', e));
+            // (verification_codes убраны — используем botCode в самом заказе)
 
         } else if (updData && updData.error) {
             console.warn('[Bot] /updates ошибка:', updData.message);
