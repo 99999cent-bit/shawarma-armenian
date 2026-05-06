@@ -1531,6 +1531,39 @@
                     </div>
                 </div>
 
+                <!-- Шаблон выдачи заказа -->
+                <div class="modal-section">
+                    <div class="modal-section-title" style="display:flex;align-items:center;gap:8px">
+                        📦 Шаблон: Заказ выдан
+                        <span class="badge badge-operator" style="font-size:10px">При нажатии «Выдать»</span>
+                    </div>
+                    <div class="tpl-toolbar">
+                        <button class="tpl-tb-btn" onclick="tplFormat('bot-tpl-issued','bold')" title="Жирный">𝐁</button>
+                        <button class="tpl-tb-btn" onclick="tplFormat('bot-tpl-issued','italic')" title="Курсив">𝐼</button>
+                        <button class="tpl-tb-btn tpl-tb-var" onclick="tplInsert('bot-tpl-issued','{name}')">{name}</button>
+                        <button class="tpl-tb-btn tpl-tb-var" onclick="tplInsert('bot-tpl-issued','{num}')">{num}</button>
+                        <button class="tpl-tb-btn tpl-tb-var" onclick="tplInsert('bot-tpl-issued','{amount}')">{amount}</button>
+                        <button class="tpl-tb-btn tpl-tb-var" onclick="tplInsert('bot-tpl-issued','{type}')">{type}</button>
+                    </div>
+                    <textarea class="s-input tpl-ta" id="bot-tpl-issued" rows="4" style="border-radius:0 0 8px 8px;border-top:none;resize:vertical;font-size:13px;font-family:monospace">📦 {name}, ваш заказ выдан!
+Спасибо, что выбрали нас. Приятного аппетита! 🍽</textarea>
+                </div>
+
+                <!-- Шаблон приветствия нового подписчика -->
+                <div class="modal-section">
+                    <div class="modal-section-title" style="display:flex;align-items:center;gap:8px">
+                        👋 Шаблон: Приветствие нового подписчика
+                        <span class="badge badge-operator" style="font-size:10px">При первом обращении к боту</span>
+                    </div>
+                    <div class="tpl-toolbar">
+                        <button class="tpl-tb-btn" onclick="tplFormat('bot-tpl-welcome','bold')" title="Жирный">𝐁</button>
+                        <button class="tpl-tb-btn" onclick="tplFormat('bot-tpl-welcome','italic')" title="Курсив">𝐼</button>
+                    </div>
+                    <textarea class="s-input tpl-ta" id="bot-tpl-welcome" rows="5" style="border-radius:0 0 8px 8px;border-top:none;resize:vertical;font-size:13px;font-family:monospace">✅ Готово! Буду присылать статус заказов.
+
+Чтобы привязать ваш телефон, назовите номер чека (4 цифры) который написан на вашем заказе.</textarea>
+                </div>
+
                 <!-- Кнопки -->
                 <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb;flex-wrap:wrap;">
                     <button class="btn btn-outline" onclick="closeModal('settingsModal')">Закрыть</button>
@@ -2859,6 +2892,9 @@
             if (_bt1 && data.bot.tplNew)      _bt1.value = data.bot.tplNew;
             if (_bt2 && data.bot.tplAccepted) _bt2.value = data.bot.tplAccepted;
             if (_bt3 && data.bot.tplReady)    _bt3.value = data.bot.tplReady;
+            const _bt4 = _bi('bot-tpl-issued'), _bt5 = _bi('bot-tpl-welcome');
+            if (_bt4 && data.bot.tplIssued)   _bt4.value = data.bot.tplIssued;
+            if (_bt5 && data.bot.tplWelcome)  _bt5.value = data.bot.tplWelcome;
             try { stopBotAutopoll(); if (data.bot.enabled && data.bot.token) startBotAutopoll(); updateBotStatusUI(); } catch(e){}
         }
         if (data.superPass) {
@@ -3783,6 +3819,9 @@
         logAction('issue_order',
             `Выдал заказ №${o.internalNum||'?'} на ${fmtMoney(o.amount)} (ID:${orderId}, ${o.customerName})`,
             orderId);
+        // Отправляем уведомление боту при выдаче
+        botSendToOrder(o, 'tplIssued', o.internalNum);
+        tgBotSendToOrder(o, 'tplIssued', o.internalNum);
         fbWriteOrder(o);
         closeModal('confirmModal');
         closeModal('orderModal');
@@ -5457,18 +5496,15 @@
 
     function _syncSubscribersToAllTTs(subs) {
         if (!_fbDB || !_fbApp || !_fbApp._fbSet) return;
-        // 1. Всегда пишем в /global/bot_subscribers (главный источник)
+        // 1. Главный источник — /global/bot_subscribers
         _fbApp._fbSet(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'), subs || []).catch(() => {});
-        // 2. Копируем в priem_cfg каждой ТТ (чтобы другие устройства видели через свой прием_cfg)
+        // 2. Синхронизируем в priem_cfg каждой ТТ чтобы все устройства получили обновлённый список
         const list = getTTList();
         list.forEach(tt => {
-            const path = (tt.id === 'tt_1' ? '' : tt.id + '/') + 'priem_cfg';
-            // Только поле subscribers — не перетираем всё priem_cfg
-            try {
-                _fbApp._fbRef(_fbDB, path + '/subscribers');
-                _fbApp._fbSet(_fbApp._fbRef(_fbDB, path + '/subscribers'), subs || []).catch(() => {});
-            } catch(e) {}
+            const path = (tt.id === 'tt_1' ? '' : tt.id + '/') + 'priem_cfg/subscribers';
+            _fbApp._fbSet(_fbApp._fbRef(_fbDB, path), subs || []).catch(() => {});
         });
+        console.log('[Subs] Синхронизировано', (subs||[]).length, 'подписчиков по', list.length, 'ТТ');
     }
 
     // Периодическая сверка подписчиков с ТТ1 (каждые 5 секунд)
@@ -5479,7 +5515,7 @@
     }
 
     async function _checkAndSyncSubscribers() {
-        if (!_fbDB || !_fbApp?._fbRef) return;
+        if (!_fbDB || !_fbApp || !_fbApp._fbRef) return;
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
             // Читаем из главного источника (global)
@@ -5547,6 +5583,10 @@
         if (t1) t1.value = c.tplNew || t1.value;
         if (t2) t2.value = c.tplAccepted || t2.value;
         if (t3) t3.value = c.tplReady || t3.value;
+        const t4 = document.getElementById('bot-tpl-issued');
+        if (t4) t4.value = c.tplIssued || t4.value;
+        const t5 = document.getElementById('bot-tpl-welcome');
+        if (t5) t5.value = c.tplWelcome || t5.value;
         updateBotStatusUI();
         renderBotSubscribers();
         // Супер-админ — показать блокировку
@@ -5581,6 +5621,10 @@
         if (t1) c.tplNew = t1.value;
         if (t2) c.tplAccepted = t2.value;
         if (t3) c.tplReady = t3.value;
+        const t4 = document.getElementById('bot-tpl-issued');
+        if (t4) c.tplIssued = t4.value;
+        const t5 = document.getElementById('bot-tpl-welcome');
+        if (t5) c.tplWelcome = t5.value;
         saveBotCfgStore(c);
         updateBotStatusUI();
         setTimeout(startBotAutopoll, 500);
@@ -5872,6 +5916,8 @@
                 if (!existing) {
                     subs.push({ userId, name: sender.name || sender.username || userId, username: sender.username || '', phone: '' });
                     changed = true;
+                    // Отправляем приветствие новому подписчику
+                    _sendNewSubscriberWelcome(userId, sender.name || '');
                 } else if (sender.name && !existing.name) {
                     existing.name = sender.name; changed = true;
                 }
@@ -6106,6 +6152,19 @@
             .replace(/{amount}/g, fmtMoney(o.amount))
             .replace(/{type}/g, o.deliveryType==='pickup'?'Самовывоз':'Доставка')
             .replace(/{num}/g, num || o.internalNum || '?');
+    }
+
+    // ── Приветствие новому подписчику ────────────────────────────────────────
+    async function _sendNewSubscriberWelcome(userId, name) {
+        const c = getBotCfg();
+        const token = (document.getElementById('bot-token') || {}).value || c.token || '';
+        if (!token) return;
+        const welcomeText = c.tplWelcome ||
+            `✅ Готово! Буду присылать статус заказов.\n\nЧтобы привязать ваш телефон, назовите номер чека (4 цифры) который написан на вашем заказе.`;
+        await maxBotRequest('POST', '/messages?user_id=' + userId, {
+            text: welcomeText, format: 'markdown'
+        });
+        console.log('[Bot] Приветствие отправлено новому подписчику userId:', userId);
     }
 
     async function botSendToOrder(o, tplKey, num) {
