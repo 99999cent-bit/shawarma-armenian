@@ -5156,8 +5156,21 @@
                 }
             });
 
-            // ── 4. Сразу подписываемся на priem_cfg всех известных ТТ ────────
+            // ── 3b. Слушаем global/bot_subscribers в реальном времени ────────────
+            onValue(ref(_fbDB, 'global/bot_subscribers'), (snap) => {
+                const data = snap.val();
+                if (!Array.isArray(data) || data.length === 0) return;
+                const localLen = (_cloud.subscribers || []).length;
+                if (localLen !== data.length || JSON.stringify(_cloud.subscribers) !== JSON.stringify(data)) {
+                    _cloud.subscribers = data;
+                    try { renderBotSubscribers(); } catch(e) {}
+                    console.log('[Subs] Real-time update:', data.length, 'подписчиков');
+                }
+            });
+
+            // ── 4. Загружаем настройки и подписчиков ─────────────────────────────
             await loadCfgFromCloud();
+            await loadGlobalSubscribers(); // загружаем общих подписчиков сразу
             _subscribeAllTTsCfg(getTTList(), ref, onValue);
 
             // Если форма входа открыта — обновляем (Firebase загрузил пользователей)
@@ -5518,19 +5531,19 @@
         if (!_fbDB || !_fbApp || !_fbApp._fbRef) return;
         try {
             const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
-            // Читаем из главного источника (global)
             const snap = await get(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'));
             const globalSubs = snap.val();
-            if (!Array.isArray(globalSubs)) return;
+            if (!Array.isArray(globalSubs) || globalSubs.length === 0) return;
 
-            // Сравниваем с локальным
-            const localStr  = JSON.stringify(_cloud.subscribers || []);
-            const globalStr = JSON.stringify(globalSubs);
-            if (localStr !== globalStr) {
-                console.log('[Subs] Sync: обновляем локальных подписчиков из global');
+            const localLen = (_cloud.subscribers || []).length;
+            const globalLen = globalSubs.length;
+            // Синхронизируем если глобальных подписчиков больше или данные отличаются
+            if (localLen !== globalLen || JSON.stringify(_cloud.subscribers) !== JSON.stringify(globalSubs)) {
+                console.log('[Subs] Sync:', localLen, '→', globalLen, 'подписчиков');
                 _cloud.subscribers = globalSubs;
-                // Если мы в ТТ где нет своих записей — обновляем тихо
-                saveCfgToCloud();
+                // Обновляем UI если вкладка подписчиков открыта
+                try { renderBotSubscribers(); } catch(e) {}
+                // НЕ вызываем saveCfgToCloud() — избегаем циклических записей
             }
         } catch(e) { /* тихо */ }
     }
