@@ -599,22 +599,41 @@
     <style>@keyframes _spin{to{transform:rotate(360deg)}}</style>
 
     <!-- ================= ЭКРАН ВХОДА АДМИНИСТРАТОРА ================= -->
-    <div id="admin-auth-overlay" class="fixed inset-0 z-[9998] flex items-center justify-center hidden" style="background-color: rgba(30,15,10,0.97); backdrop-filter: blur(8px);">
+    <div id="admin-auth-overlay" class="fixed inset-0 z-[9998] flex items-center justify-center hidden" style="background-color: rgba(30,15,10,0.97);">
+        <!-- Модалка сброса логина/пароля — внутри оверлея, поверх него -->
+        <div id="modal-reset-login" class="fixed inset-0 z-[10002] flex items-center justify-center hidden" style="background:rgba(0,0,0,0.85)">
+            <div class="bg-[#3e2723] p-6 rounded-2xl border border-[#4e342e] shadow-2xl w-full max-w-sm mx-4">
+                <h3 class="text-base font-bold text-[#ffb300] mb-1">🔄 Сброс доступа</h3>
+                <p class="text-xs text-[#a1887f] mb-4">Введите мастер-пароль — логин и пароль будут сброшены до значений по умолчанию</p>
+                <div class="space-y-3">
+                    <input id="rl-master" type="password" placeholder="Мастер-пароль"
+                        class="w-full px-3 py-2 rounded-xl text-white text-sm outline-none" style="background:#2a1a14;border:1px solid #5d4037;">
+                    <p id="rl-error" class="text-red-400 text-xs hidden"></p>
+                    <p id="rl-ok" class="text-green-400 text-xs hidden"></p>
+                    <div class="flex gap-2">
+                        <button onclick="app.doResetLogin()" class="flex-1 bg-[#d84315] text-white font-bold py-2 rounded-xl text-sm">Сбросить</button>
+                        <button onclick="document.getElementById('modal-reset-login').classList.add('hidden')" class="flex-1 bg-[#4e342e] text-[#a1887f] py-2 rounded-xl text-sm">Отмена</button>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="bg-[#3e2723] p-8 rounded-3xl border border-[#4e342e] shadow-2xl w-full max-w-sm text-center mx-4">
             <div class="mx-auto w-16 h-16 bg-[#2a1a14] text-[#ffb300] rounded-full flex items-center justify-center mb-4 border border-[#4e342e]">
                 <i data-lucide="lock" class="w-8 h-8"></i>
             </div>
             <h2 class="text-xl font-bold text-white mb-1" style="font-family:Georgia,serif;">Панель администратора</h2>
             <p class="text-[#a1887f] text-sm mb-6">Введите логин и пароль для входа</p>
-            <form onsubmit="app.loginAdmin(event)" class="space-y-3 text-left">
-                <input id="auth-email" type="text" placeholder="Логин" required autocomplete="username"
+            <div class="space-y-3 text-left">
+                <input id="auth-email" type="text" placeholder="Логин" autocomplete="username"
                     class="w-full px-4 py-3 rounded-xl text-white outline-none"
-                    style="background:#2a1a14;border:1px solid #5d4037;">
-                <input id="auth-password" type="password" placeholder="Пароль" required autocomplete="current-password"
+                    style="background:#2a1a14;border:1px solid #5d4037;"
+                    onkeydown="if(event.key==='Enter')app.loginAdmin(event)">
+                <input id="auth-password" type="password" placeholder="Пароль" autocomplete="current-password"
                     class="w-full px-4 py-3 rounded-xl text-white outline-none"
-                    style="background:#2a1a14;border:1px solid #5d4037;">
+                    style="background:#2a1a14;border:1px solid #5d4037;"
+                    onkeydown="if(event.key==='Enter')app.loginAdmin(event)">
                 <p id="auth-error" class="text-red-400 text-xs hidden px-1"></p>
-                <button type="submit" id="auth-btn"
+                <button type="button" id="auth-btn" onclick="app.loginAdmin(event)"
                     class="w-full font-bold py-3 rounded-xl text-white flex justify-center items-center gap-2 transition-colors"
                     style="background:#d84315;">
                     Войти <i data-lucide="arrow-right" class="w-4 h-4"></i>
@@ -624,24 +643,6 @@
                     style="background:transparent;color:#a1887f;border:1px solid #4e342e;">
                     <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Сброс логина и пароля
                 </button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Модалка сброса логина/пароля (мастер-пароль) -->
-    <div id="modal-reset-login" class="fixed inset-0 z-[10001] flex items-center justify-center hidden" style="background:rgba(0,0,0,0.85)">
-        <div class="bg-[#3e2723] p-6 rounded-2xl border border-[#4e342e] shadow-2xl w-full max-w-sm mx-4">
-            <h3 class="text-base font-bold text-[#ffb300] mb-1">🔄 Сброс доступа</h3>
-            <p class="text-xs text-[#a1887f] mb-4">Введите мастер-пароль — логин и пароль будут сброшены до значений по умолчанию</p>
-            <div class="space-y-3">
-                <input id="rl-master" type="password" placeholder="Мастер-пароль"
-                    class="w-full px-3 py-2 rounded-xl text-white text-sm outline-none" style="background:#2a1a14;border:1px solid #5d4037;">
-                <p id="rl-error" class="text-red-400 text-xs hidden"></p>
-                <p id="rl-ok" class="text-green-400 text-xs hidden">✅ Доступ сброшен. Логин: <b>admin</b></p>
-                <div class="flex gap-2">
-                    <button onclick="app.doResetLogin()" class="flex-1 bg-[#d84315] text-white font-bold py-2 rounded-xl text-sm">Сбросить</button>
-                    <button onclick="document.getElementById('modal-reset-login').classList.add('hidden')" class="flex-1 bg-[#4e342e] text-[#a1887f] py-2 rounded-xl text-sm">Отмена</button>
-                </div>
             </div>
         </div>
     </div>
@@ -3962,7 +3963,7 @@
             _isMaster:     false,
             _localLoggedIn: false, // true если вошли через локальный логин (не Firebase Auth)
 
-            _getAdminPass() { return localStorage.getItem('_adm_p') || '89144892253'; },
+            _getAdminPass() { return localStorage.getItem('_adm_p') || '1111'; },
             _setAdminPass(p) {
                 localStorage.setItem('_adm_p', p);
                 try {
@@ -3979,68 +3980,80 @@
                 } catch(e) {}
             },
 
-            async loginAdmin(e) {
-                e.preventDefault();
-                const login = document.getElementById('auth-email').value.trim();
-                const pass  = document.getElementById('auth-password').value;
+            loginAdmin(e) {
+                if(e && e.preventDefault) { e.preventDefault(); e.stopPropagation(); }
+
+                const loginEl = document.getElementById('auth-email');
+                const login = loginEl ? loginEl.value.trim() : '';
+                const pass  = (document.getElementById('auth-password') || {}).value || '';
                 const errEl = document.getElementById('auth-error');
                 const btn   = document.getElementById('auth-btn');
-                errEl.classList.add('hidden');
-                btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5" style="animation:_spin 0.8s linear infinite;display:inline-block;"></i> Вход…';
-                try { app.icons(); } catch(e) {}
+                if(errEl) errEl.classList.add('hidden');
+                if(btn) {
+                    btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5" style="animation:_spin 0.8s linear infinite;display:inline-block;"></i> Вход…';
+                    try { app.icons(); } catch(er) {}
+                }
 
-                const resetBtn = () => {
-                    btn.innerHTML = 'Войти <i data-lucide="arrow-right" class="w-4 h-4"></i>';
-                    try { app.icons(); } catch(e) {}
+                const showErr = (msg) => {
+                    if(errEl) { errEl.textContent = msg; errEl.classList.remove('hidden'); }
+                    if(btn) { btn.innerHTML = 'Войти <i data-lucide="arrow-right" class="w-4 h-4"></i>'; try { app.icons(); } catch(er) {} }
+                };
+                const doEnter = () => {
+                    if(btn) { btn.innerHTML = 'Войти <i data-lucide="arrow-right" class="w-4 h-4"></i>'; try { app.icons(); } catch(er) {} }
+                    const ov = document.getElementById('admin-auth-overlay');
+                    if(ov) ov.classList.add('hidden');
                 };
 
                 // ── 1. МАСТЕР-АККАУНТ ────────────────────────────────────────
                 if(login === this._MASTER_EMAIL && pass === this._MASTER_PASS) {
                     this._isMaster = true;
-                    this._localLoggedIn = true; // флаг: вошли локально
-                    const ov = document.getElementById('admin-auth-overlay');
-                    if(ov) ov.classList.add('hidden');
+                    this._localLoggedIn = true;
+                    doEnter();
                     const pb = document.getElementById('btn-master-perms');
                     if(pb) pb.style.display = '';
-                    // Показываем ВСЕ вкладки для мастера
-                    try { this._applyTabPerms({}); } catch(e) {}
-                    try { this.setView('admin'); this.render(); app.icons(); } catch(e) {}
-                    resetBtn();
+                    try { this._applyTabPerms({}); } catch(er) {}
+                    try { this.setView('admin'); this.render(); app.icons(); } catch(er) {}
                     return;
                 }
 
-                // ── 2. ЛОКАЛЬНЫЙ ADMIN (логин + пароль) ──────────────────────
-                if(login === this._getAdminUser() && pass === this._getAdminPass()) {
+                // ── 2. ЛОКАЛЬНЫЙ ADMIN ────────────────────────────────────────
+                const expectedUser = this._getAdminUser();
+                const expectedPass = this._getAdminPass();
+                if(login === expectedUser && pass === expectedPass) {
                     this._isMaster = false;
-                    this._localLoggedIn = true; // флаг: вошли локально, onAuthStateChanged не трогает оверлей
-                    const ov = document.getElementById('admin-auth-overlay');
-                    if(ov) ov.classList.add('hidden');
+                    this._localLoggedIn = true;
+                    doEnter();
                     const pb3 = document.getElementById('btn-master-perms');
                     if(pb3) pb3.style.display = 'none';
-                    try { this.setView('admin'); this.render(); app.icons(); } catch(e) {}
-                    try { this._applyTabPerms(this._getTabPerms()); } catch(e) {}
-                    resetBtn();
+                    try { this.setView('admin'); this.render(); app.icons(); } catch(er) {}
+                    try { this._applyTabPerms(this._getTabPerms()); } catch(er) {}
                     return;
                 }
 
-                // ── 3. FIREBASE AUTH (email + пароль Firebase) ────────────────────
-                try {
-                    if(typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length)
-                        throw new Error('Неверный логин или пароль');
-                    await firebase.auth().signInWithEmailAndPassword(login, pass);
-                    // onAuthStateChanged в init() скроет оверлей
-                } catch(err) {
-                    const msg =
-                        err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential'
-                        ? 'Неверный логин или пароль'
-                        : err.code === 'auth/too-many-requests'
-                        ? 'Слишком много попыток — попробуйте позже'
-                        : (err.message || 'Неверный логин или пароль');
-                    errEl.textContent = msg;
-                    errEl.style.color = '';
-                    errEl.classList.remove('hidden');
+                // ── 3. FIREBASE AUTH (асинхронно, только если локальные не подошли) ──
+                // Если введены не-master и не-local учётные данные — пробуем Firebase
+                if(!login || !pass) {
+                    showErr('Введите логин и пароль');
+                    return;
                 }
-                resetBtn();
+
+                const self = this;
+                (async () => {
+                    try {
+                        if(typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length)
+                            throw new Error('Неверный логин или пароль');
+                        await firebase.auth().signInWithEmailAndPassword(login, pass);
+                        // onAuthStateChanged скроет оверлей
+                    } catch(err) {
+                        const msg =
+                            err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential'
+                            ? 'Неверный логин или пароль'
+                            : err.code === 'auth/too-many-requests'
+                            ? 'Слишком много попыток — попробуйте позже'
+                            : (err.message || 'Неверный логин или пароль');
+                        showErr(msg);
+                    }
+                })();
             },
 
             // ── Сброс логина и пароля (кнопка на экране входа) ───────────────
@@ -4063,20 +4076,20 @@
                 }
                 // Сбрасываем логин и пароль до значений по умолчанию
                 this._setAdminUser('admin');
-                this._setAdminPass('89144892253');
+                this._setAdminPass('1111');
                 // Явно синхронизируем в Firebase сразу
                 try {
                     if(firebase && firebase.apps && firebase.apps.length) {
                         firebase.database().ref('priem_cfg/au').set(btoa('admin')).catch(()=>{});
-                        firebase.database().ref('priem_cfg/ap').set(btoa('89144892253')).catch(()=>{});
+                        firebase.database().ref('priem_cfg/ap').set(btoa('1111')).catch(()=>{});
                     }
                 } catch(e) {}
                 // Обновляем поля входа если видны
                 const emailEl = document.getElementById('auth-email');
                 const passEl  = document.getElementById('auth-password');
                 if(emailEl) emailEl.value = 'admin';
-                if(passEl)  passEl.value  = '89144892253';
-                if(okEl) { okEl.textContent = '✅ Логин «admin» и пароль «89144892253» восстановлены и сохранены в облаке'; okEl.classList.remove('hidden'); }
+                if(passEl)  passEl.value  = '1111';
+                if(okEl) { okEl.textContent = '✅ Логин: admin | Пароль: 1111 — сохранено в облаке'; okEl.classList.remove('hidden'); }
                 setTimeout(() => {
                     const m = document.getElementById('modal-reset-login');
                     if(m) m.classList.add('hidden');
@@ -4386,9 +4399,8 @@
                             if(priemData && priemData.ap) {
                                 try { localStorage.setItem('_adm_p', atob(priemData.ap)); } catch(e) {}
                             }
-                            // Загружаем настройки модалки бота из Firebase
-                            if(false && priemData && priemData.botModal) {
-                                const fbBm = priemData.botModal;
+                            // Загружаем настройки модалки бота из Firebase (отключено)
+                            // if(priemData && priemData.botModal) { ... }
                         } catch(e) { console.warn('priem_cfg:', e); }
                         // Запускаем real-time слушатель ПОСЛЕ первоначальной загрузки
                         try { this.startRealtimeSync(); } catch(e) { console.warn('rt:', e); }
@@ -4410,23 +4422,24 @@
 
                         const fbReady = typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length;
                         if(fbReady && typeof firebase.auth === 'function') {
-                            // Подписываемся на статус входа
+                            // Показываем экран входа сразу (не ждём Firebase)
+                            if(overlay) overlay.classList.remove('hidden');
+
                             firebase.auth().onAuthStateChanged(user => {
-                                // Если вошли через локальный логин/пароль — не трогаем оверлей
+                                // Локальный вход — НИКОГДА не трогаем оверлей из этого callback
                                 if(this._localLoggedIn) return;
                                 if(user) {
-                                    // Успешный вход — скрываем замок, открываем админку
                                     if(overlay) overlay.classList.add('hidden');
                                     this._isMaster = false;
                                     try { this.setView('admin'); } catch(e) {}
                                     try { this.render(); } catch(e) {}
-                                    // Применяем разрешения вкладок для Firebase-пользователей
                                     try { this._applyTabPerms(this._getTabPerms()); } catch(e) {}
                                 } else {
-                                    // Не авторизован — показываем замок
-                                    if(overlay) overlay.classList.remove('hidden');
-                                    try { this.setView('client'); } catch(e) {}
-                                    try { this.render(); } catch(e) {}
+                                    // Пользователь не авторизован в Firebase — показываем форму входа
+                                    // Но только если мы не вошли локально
+                                    if(!this._localLoggedIn) {
+                                        if(overlay) overlay.classList.remove('hidden');
+                                    }
                                 }
                                 try { app.icons(); } catch(e) {}
                             });
@@ -4511,7 +4524,7 @@
                 // ===== ФОН САЙТА =====
                 const overlay = this.hexToRgba(d.bg.color, d.bg.op);
                 const bgSize = d.bg.size === 'manual' ? `${d.bg.scale || 100}%` : (d.bg.size || 'cover');
-                const bgPos  = `${d.bg.posX ?? 50}% ${d.bg.posY ?? 50}%`;
+                const bgPos  = `${d.bg.posX || 50}% ${d.bg.posY || 50}%`;
                 const _bgImg = this._m(d.bg.image);
                 if(_bgImg) {
                     document.body.style.backgroundImage = `linear-gradient(${overlay}, ${overlay}), url('${_bgImg}')`;
@@ -4525,7 +4538,7 @@
                 // ===== КАРТОЧКИ =====
                 const cardOverlay = this.hexToRgba(d.cards.color, d.cards.op);
                 const cardBgSize = d.cards.bgSize === 'manual' ? `${d.cards.bgScale || 100}%` : (d.cards.bgSize || 'cover');
-                const cardBgPos  = `${d.cards.bgPosX ?? 50}% ${d.cards.bgPosY ?? 50}%`;
+                const cardBgPos  = `${d.cards.bgPosX || 50}% ${d.cards.bgPosY || 50}%`;
                 document.documentElement.style.setProperty('--card-color', d.cards.color);
                 document.documentElement.style.setProperty('--card-overlay', cardOverlay);
                 document.documentElement.style.setProperty('--card-bg-image',
@@ -4537,7 +4550,7 @@
                 const pd = d.productDetail || { color: '#3e2723', op: 1, bgImage: '' };
                 const pdOverlay = this.hexToRgba(pd.color, pd.op);
                 const pdBgSize  = pd.bgSize === 'manual' ? `${pd.bgScale || 100}%` : (pd.bgSize || 'cover');
-                const pdBgPos   = `${pd.bgPosX ?? 50}% ${pd.bgPosY ?? 50}%`;
+                const pdBgPos   = `${pd.bgPosX || 50}% ${pd.bgPosY || 50}%`;
                 document.documentElement.style.setProperty('--detail-color', pd.color);
                 document.documentElement.style.setProperty('--detail-overlay', pdOverlay);
                 document.documentElement.style.setProperty('--detail-bg-image',
@@ -4674,17 +4687,17 @@
                 document.documentElement.style.setProperty('--cart-item-padding', ct.itemPadding + 'px');
                 document.documentElement.style.setProperty('--cart-qty-btn-size', ct.qtyBtnSize + 'px');
                 // Фон карточек
-                const itemBg = this.hexToRgba(ct.itemBgColor || '#2a1a14', ct.itemBgOp ?? 0.5);
+                const itemBg = this.hexToRgba(ct.itemBgColor || '#2a1a14', ct.itemBgOp || 0.5);
                 document.documentElement.style.setProperty('--cart-item-bg', itemBg);
                 document.documentElement.style.setProperty('--cart-item-bg-image', this._m(ct.itemBgImage) ? `url('${this._m(ct.itemBgImage)}')` : 'none');
                 document.documentElement.style.setProperty('--cart-item-border', ct.itemBorderColor || '#4e342e');
                 // Фон нижней панели
-                const footerBg = this.hexToRgba(ct.footerBgColor || '#1a0d0a', ct.footerBgOp ?? 0.8);
+                const footerBg = this.hexToRgba(ct.footerBgColor || '#1a0d0a', ct.footerBgOp || 0.8);
                 document.documentElement.style.setProperty('--cart-footer-bg', footerBg);
                 document.documentElement.style.setProperty('--cart-footer-bg-image', this._m(ct.footerBgImage) ? `url('${this._m(ct.footerBgImage)}')` : 'none');
                 document.documentElement.style.setProperty('--cart-footer-border', ct.footerBorderColor || '#4e342e');
                 // Фон шапки корзины
-                const cartHeaderBg = this.hexToRgba(ct.headerBgColor || '#1a0d0a', ct.headerBgOp ?? 0.8);
+                const cartHeaderBg = this.hexToRgba(ct.headerBgColor || '#1a0d0a', ct.headerBgOp || 0.8);
                 document.documentElement.style.setProperty('--cart-header-bg', cartHeaderBg);
                 document.documentElement.style.setProperty('--cart-header-bg-image', this._m(ct.headerBgImage) ? `url('${this._m(ct.headerBgImage)}')` : 'none');
 
@@ -4696,30 +4709,30 @@
 
                 // ===== ТЕЛО КОРЗИНЫ =====
                 const cbdy = d.cartBody || { color:'#1e0f0a', op:0.95, bgImage:'', bgSize:'cover', bgScale:100, bgPosX:50, bgPosY:50 };
-                const cartBodyBg = this.hexToRgba(cbdy.color || '#1e0f0a', cbdy.op ?? 0.95);
+                const cartBodyBg = this.hexToRgba(cbdy.color || '#1e0f0a', cbdy.op || 0.95);
                 const cartBodySz = cbdy.bgSize === 'manual' ? `${cbdy.bgScale||100}%` : (cbdy.bgSize||'cover');
                 document.documentElement.style.setProperty('--cart-body-bg', cartBodyBg);
                 document.documentElement.style.setProperty('--cart-body-bg-image', this._m(cbdy.bgImage) ? `url('${this._m(cbdy.bgImage)}')` : 'none');
                 document.documentElement.style.setProperty('--cart-body-bg-size', cartBodySz);
-                document.documentElement.style.setProperty('--cart-body-bg-pos', `${cbdy.bgPosX??50}% ${cbdy.bgPosY??50}%`);
+                document.documentElement.style.setProperty('--cart-body-bg-pos', `${cbdy.bgPosX||50}% ${cbdy.bgPosY||50}%`);
 
                 // ===== ОКНО ОФОРМЛЕНИЯ ЗАКАЗА =====
                 const co = d.checkout || { color:'#3e2723', op:1, bgImage:'', bgSize:'cover', bgScale:100, bgPosX:50, bgPosY:50 };
-                const checkoutBg = this.hexToRgba(co.color || '#3e2723', co.op ?? 1);
+                const checkoutBg = this.hexToRgba(co.color || '#3e2723', co.op || 1);
                 const checkoutSz = co.bgSize === 'manual' ? `${co.bgScale||100}%` : (co.bgSize||'cover');
                 document.documentElement.style.setProperty('--checkout-bg', checkoutBg);
                 document.documentElement.style.setProperty('--checkout-bg-image', this._m(co.bgImage) ? `url('${this._m(co.bgImage)}')` : 'none');
                 document.documentElement.style.setProperty('--checkout-bg-size', checkoutSz);
-                document.documentElement.style.setProperty('--checkout-bg-pos', `${co.bgPosX??50}% ${co.bgPosY??50}%`);
+                document.documentElement.style.setProperty('--checkout-bg-pos', `${co.bgPosX||50}% ${co.bgPosY||50}%`);
 
                 // ===== ОКНО ВЫБОРА САМОВЫВОЗ/ДОСТАВКА =====
                 const cm = d.choiceModal || { color:'#2a1a14', op:1, bgImage:'', pickupBg:'#4e342e', pickupColor:'#ffffff', deliveryBg:'#d84315', deliveryColor:'#ffffff', btnRadius:16, btnFontSize:16, btnPy:18 };
-                const choiceBg = this.hexToRgba(cm.color || '#2a1a14', cm.op ?? 1);
+                const choiceBg = this.hexToRgba(cm.color || '#2a1a14', cm.op || 1);
                 const choiceSz = cm.bgSize === 'manual' ? `${cm.bgScale||100}%` : (cm.bgSize||'cover');
                 document.documentElement.style.setProperty('--choice-bg-color', choiceBg);
                 document.documentElement.style.setProperty('--choice-bg-image', this._m(cm.bgImage) ? `url('${this._m(cm.bgImage)}')` : 'none');
                 document.documentElement.style.setProperty('--choice-bg-size', choiceSz);
-                document.documentElement.style.setProperty('--choice-bg-pos', `${cm.bgPosX??50}% ${cm.bgPosY??50}%`);
+                document.documentElement.style.setProperty('--choice-bg-pos', `${cm.bgPosX||50}% ${cm.bgPosY||50}%`);
                 document.documentElement.style.setProperty('--choice-btn-pickup-bg', cm.pickupBg || '#4e342e');
                 document.documentElement.style.setProperty('--choice-btn-pickup-color', cm.pickupColor || '#ffffff');
                 document.documentElement.style.setProperty('--choice-btn-delivery-bg', cm.deliveryBg || '#d84315');
@@ -5229,13 +5242,13 @@
                 const vBgScl = document.getElementById('val-bg-scale');
                 if(vBgScl) vBgScl.innerText = (d.bg.scale || 100) + '%';
                 const slBgPX = document.getElementById('slider-bg-pos-x');
-                if(slBgPX) slBgPX.value = d.bg.posX ?? 50;
+                if(slBgPX) slBgPX.value = d.bg.posX || 50;
                 const vBgPX = document.getElementById('val-bg-pos-x');
-                if(vBgPX) vBgPX.innerText = (d.bg.posX ?? 50) + '%';
+                if(vBgPX) vBgPX.innerText = (d.bg.posX || 50) + '%';
                 const slBgPY = document.getElementById('slider-bg-pos-y');
-                if(slBgPY) slBgPY.value = d.bg.posY ?? 50;
+                if(slBgPY) slBgPY.value = d.bg.posY || 50;
                 const vBgPY = document.getElementById('val-bg-pos-y');
-                if(vBgPY) vBgPY.innerText = (d.bg.posY ?? 50) + '%';
+                if(vBgPY) vBgPY.innerText = (d.bg.posY || 50) + '%';
 
                 // Logo toggle sync
                 this.syncLogoToggle();
@@ -5267,13 +5280,13 @@
                 const vCBScl = document.getElementById('val-card-bg-scale');
                 if(vCBScl) vCBScl.innerText = (d.cards.bgScale || 100) + '%';
                 const slCBPX = document.getElementById('slider-card-bg-pos-x');
-                if(slCBPX) slCBPX.value = d.cards.bgPosX ?? 50;
+                if(slCBPX) slCBPX.value = d.cards.bgPosX || 50;
                 const vCBPX = document.getElementById('val-card-bg-pos-x');
-                if(vCBPX) vCBPX.innerText = (d.cards.bgPosX ?? 50) + '%';
+                if(vCBPX) vCBPX.innerText = (d.cards.bgPosX || 50) + '%';
                 const slCBPY = document.getElementById('slider-card-bg-pos-y');
-                if(slCBPY) slCBPY.value = d.cards.bgPosY ?? 50;
+                if(slCBPY) slCBPY.value = d.cards.bgPosY || 50;
                 const vCBPY = document.getElementById('val-card-bg-pos-y');
-                if(vCBPY) vCBPY.innerText = (d.cards.bgPosY ?? 50) + '%';
+                if(vCBPY) vCBPY.innerText = (d.cards.bgPosY || 50) + '%';
 
                 // Превью фоновой картинки карточки
                 const prevCB = document.getElementById('preview-card-bg');
@@ -5327,13 +5340,13 @@
                 const vDBScl = document.getElementById('val-detail-bg-scale');
                 if(vDBScl) vDBScl.innerText = (pd.bgScale || 100) + '%';
                 const slDBPX = document.getElementById('slider-detail-bg-pos-x');
-                if(slDBPX) slDBPX.value = pd.bgPosX ?? 50;
+                if(slDBPX) slDBPX.value = pd.bgPosX || 50;
                 const vDBPX = document.getElementById('val-detail-bg-pos-x');
-                if(vDBPX) vDBPX.innerText = (pd.bgPosX ?? 50) + '%';
+                if(vDBPX) vDBPX.innerText = (pd.bgPosX || 50) + '%';
                 const slDBPY = document.getElementById('slider-detail-bg-pos-y');
-                if(slDBPY) slDBPY.value = pd.bgPosY ?? 50;
+                if(slDBPY) slDBPY.value = pd.bgPosY || 50;
                 const vDBPY = document.getElementById('val-detail-bg-pos-y');
-                if(vDBPY) vDBPY.innerText = (pd.bgPosY ?? 50) + '%';
+                if(vDBPY) vDBPY.innerText = (pd.bgPosY || 50) + '%';
 
                 // Окна
                 const pkW = document.getElementById('picker-win-color');
@@ -5540,9 +5553,9 @@
                 const vCIB = document.getElementById('val-cart-item-bg');
                 if(vCIB) vCIB.innerText = ct.itemBgColor || '#2a1a14';
                 const slCIO = document.getElementById('slider-cart-item-op');
-                if(slCIO) slCIO.value = Math.round((ct.itemBgOp ?? 0.5)*100);
+                if(slCIO) slCIO.value = Math.round((ct.itemBgOp || 0.5)*100);
                 const vCIO = document.getElementById('val-cart-item-op');
-                if(vCIO) vCIO.innerText = Math.round((ct.itemBgOp ?? 0.5)*100) + '%';
+                if(vCIO) vCIO.innerText = Math.round((ct.itemBgOp || 0.5)*100) + '%';
                 const pkCIBr = document.getElementById('picker-cart-item-border');
                 if(pkCIBr) pkCIBr.value = ct.itemBorderColor || '#4e342e';
                 const vCIBr = document.getElementById('val-cart-item-border');
@@ -5560,9 +5573,9 @@
                 const vCFB = document.getElementById('val-cart-footer-bg');
                 if(vCFB) vCFB.innerText = ct.footerBgColor || '#1a0d0a';
                 const slCFO = document.getElementById('slider-cart-footer-op');
-                if(slCFO) slCFO.value = Math.round((ct.footerBgOp ?? 0.8)*100);
+                if(slCFO) slCFO.value = Math.round((ct.footerBgOp || 0.8)*100);
                 const vCFO = document.getElementById('val-cart-footer-op');
-                if(vCFO) vCFO.innerText = Math.round((ct.footerBgOp ?? 0.8)*100) + '%';
+                if(vCFO) vCFO.innerText = Math.round((ct.footerBgOp || 0.8)*100) + '%';
                 const prevCFBg = document.getElementById('preview-cart-footer-bg');
                 const prevCFBgEl = document.getElementById('preview-cart-footer-bg-el');
                 if(prevCFBg && prevCFBgEl) {
@@ -5576,9 +5589,9 @@
                 const vCHB = document.getElementById('val-cart-header-bg');
                 if(vCHB) vCHB.innerText = ct.headerBgColor || '#1a0d0a';
                 const slCHO = document.getElementById('slider-cart-header-op');
-                if(slCHO) slCHO.value = Math.round((ct.headerBgOp ?? 0.8)*100);
+                if(slCHO) slCHO.value = Math.round((ct.headerBgOp || 0.8)*100);
                 const vCHO = document.getElementById('val-cart-header-op');
-                if(vCHO) vCHO.innerText = Math.round((ct.headerBgOp ?? 0.8)*100) + '%';
+                if(vCHO) vCHO.innerText = Math.round((ct.headerBgOp || 0.8)*100) + '%';
                 const prevCHBg = document.getElementById('preview-cart-header-bg');
                 const prevCHBgEl = document.getElementById('preview-cart-header-bg-el');
                 if(prevCHBg && prevCHBgEl) {
@@ -5633,28 +5646,28 @@
                 const vSHbg = document.getElementById('val-sech-bg');
                 if(vSHbg) vSHbg.innerText = sh2.bgColorHex || '#d84315';
                 const slSHbgOp = document.getElementById('slider-sech-bg-op');
-                if(slSHbgOp) slSHbgOp.value = sh2.bgColorAlpha ?? 20;
+                if(slSHbgOp) slSHbgOp.value = sh2.bgColorAlpha || 20;
                 const vSHbgOp = document.getElementById('val-sech-bg-op');
-                if(vSHbgOp) vSHbgOp.innerText = (sh2.bgColorAlpha ?? 20) + '%';
+                if(vSHbgOp) vSHbgOp.innerText = (sh2.bgColorAlpha || 20) + '%';
                 const pkSHbdr = document.getElementById('picker-sech-border');
                 if(pkSHbdr) pkSHbdr.value = sh2.borderColor || '#d84315';
                 const vSHbdr = document.getElementById('val-sech-border');
                 if(vSHbdr) vSHbdr.innerText = sh2.borderColor || '#d84315';
                 const slSHop = document.getElementById('slider-sech-op');
-                if(slSHop) slSHop.value = Math.round((sh2.op ?? 1)*100);
+                if(slSHop) slSHop.value = Math.round((sh2.op || 1)*100);
                 const vSHop = document.getElementById('val-sech-op');
-                if(vSHop) vSHop.innerText = Math.round((sh2.op ?? 1)*100) + '%';
+                if(vSHop) vSHop.innerText = Math.round((sh2.op || 1)*100) + '%';
 
                 // ===== ОВЕРЛЕЙ КАРТОЧЕК КАТЕГОРИЙ =====
                 const cov = d.catcardOverlay || { topOp:0.15, btmOp:0.85 };
                 const slCovT = document.getElementById('slider-catov-top');
-                if(slCovT) slCovT.value = Math.round((cov.topOp ?? 0.15)*100);
+                if(slCovT) slCovT.value = Math.round((cov.topOp || 0.15)*100);
                 const vCovT = document.getElementById('val-catov-top');
-                if(vCovT) vCovT.innerText = Math.round((cov.topOp ?? 0.15)*100) + '%';
+                if(vCovT) vCovT.innerText = Math.round((cov.topOp || 0.15)*100) + '%';
                 const slCovB = document.getElementById('slider-catov-btm');
-                if(slCovB) slCovB.value = Math.round((cov.btmOp ?? 0.85)*100);
+                if(slCovB) slCovB.value = Math.round((cov.btmOp || 0.85)*100);
                 const vCovB = document.getElementById('val-catov-btm');
-                if(vCovB) vCovB.innerText = Math.round((cov.btmOp ?? 0.85)*100) + '%';
+                if(vCovB) vCovB.innerText = Math.round((cov.btmOp || 0.85)*100) + '%';
 
                 // ===== КНОПКИ +/- НА КАРТОЧКАХ =====
                 const cqb = d.cardQtyBtn || { size:36 };
@@ -5670,9 +5683,9 @@
                 const vCBdy = document.getElementById('val-cart-body-bg');
                 if(vCBdy) vCBdy.innerText = cbdy.color || '#1e0f0a';
                 const slCBdyO = document.getElementById('slider-cart-body-op');
-                if(slCBdyO) slCBdyO.value = Math.round((cbdy.op??0.95)*100);
+                if(slCBdyO) slCBdyO.value = Math.round((cbdy.op||0.95)*100);
                 const vCBdyO = document.getElementById('val-cart-body-op');
-                if(vCBdyO) vCBdyO.innerText = Math.round((cbdy.op??0.95)*100) + '%';
+                if(vCBdyO) vCBdyO.innerText = Math.round((cbdy.op||0.95)*100) + '%';
                 const slCBdyScl = document.getElementById('slider-cart-body-scale');
                 if(slCBdyScl) slCBdyScl.value = cbdy.bgScale||100;
                 const vCBdyScl = document.getElementById('val-cart-body-scale');
@@ -5691,9 +5704,9 @@
                 const vCheckBg = document.getElementById('val-checkout-bg');
                 if(vCheckBg) vCheckBg.innerText = co.color || '#3e2723';
                 const slCOO = document.getElementById('slider-checkout-op');
-                if(slCOO) slCOO.value = Math.round((co.op??1)*100);
+                if(slCOO) slCOO.value = Math.round((co.op||1)*100);
                 const vCOO = document.getElementById('val-checkout-op');
-                if(vCOO) vCOO.innerText = Math.round((co.op??1)*100) + '%';
+                if(vCOO) vCOO.innerText = Math.round((co.op||1)*100) + '%';
                 const slCOScl = document.getElementById('slider-checkout-scale');
                 if(slCOScl) slCOScl.value = co.bgScale||100;
                 const vCOScl = document.getElementById('val-checkout-scale');
@@ -5712,9 +5725,9 @@
                 const vChBg = document.getElementById('val-choice-bg');
                 if(vChBg) vChBg.innerText = cm.color || '#2a1a14';
                 const slChOp = document.getElementById('slider-choice-op');
-                if(slChOp) slChOp.value = Math.round((cm.op??1)*100);
+                if(slChOp) slChOp.value = Math.round((cm.op||1)*100);
                 const vChOp = document.getElementById('val-choice-op');
-                if(vChOp) vChOp.innerText = Math.round((cm.op??1)*100) + '%';
+                if(vChOp) vChOp.innerText = Math.round((cm.op||1)*100) + '%';
                 const pkPuBg = document.getElementById('picker-pickup-bg');
                 if(pkPuBg) pkPuBg.value = cm.pickupBg || '#4e342e';
                 const pkPuC = document.getElementById('picker-pickup-color');
@@ -7443,12 +7456,12 @@
                     }
                 }
 
-                const name    = (document.getElementById('co-name')?.value || '').trim();
-                const rawPhone = (document.getElementById('co-phone')?.value || '').trim();
+                const name    = ((document.getElementById('co-name') || {}).value || '').trim();
+                const rawPhone = ((document.getElementById('co-phone') || {}).value || '').trim();
                 // Авто-исправление: 8XXXXXXXXXX → +7XXXXXXXXXX
                 const phone = app._fixPhone(rawPhone);
                 if(document.getElementById('co-phone')) document.getElementById('co-phone').value = phone;
-                const comment = (document.getElementById('co-comment')?.value || '').trim();
+                const comment = ((document.getElementById('co-comment') || {}).value || '').trim();
 
                 // Собираем позиции корзины
                 const items = [];
@@ -7465,7 +7478,7 @@
 
                 // Форматируем адрес и примечание
                 const addressStr = isDelivery ? this.formatAddress() : '';
-                const noteStr = (isDelivery && this.state.order.address?.note)
+                const noteStr = (isDelivery && (this.state.order.address && this.state.order.address.note))
                     ? this.state.order.address.note : '';
                 const fullComment = [comment, noteStr].filter(Boolean).join(' | ');
 
