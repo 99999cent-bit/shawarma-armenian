@@ -3762,15 +3762,8 @@
         o.acceptedBy  = currentUser ? currentUser.name : cfg.operator;
         o.acceptedAt  = new Date().toISOString();
 
-        // Сохраняем код верификации в Firebase (последние 4 цифры чека)
+        // botCode хранится прямо в заказе (o.botCode) — verification_codes Firebase не используем
         const botCode = String(internalNum).slice(-4);
-        if(typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length) {
-            try { firebase.database().ref('verification_codes/' + botCode).set({
-                phone: o.customerPhone||'', name: o.customerName||'',
-                orderId: o.id||'', receiptNum: internalNum,
-                createdAt: Date.now(), used: false
-            }); } catch(e) {}
-        }
 
         logAction('accept_order',
             `Принял заказ на ${fmtMoney(o.amount)}. Чек №${internalNum} | Код бота: ${botCode} (клиент: ${o.customerName})`,
@@ -5908,19 +5901,8 @@
 
             console.log('[Bot] /updates получено:', updates.length, 'событий; маркер:', _botUpdatesMarker);
 
-            // ── Загружаем коды верификации из Firebase как ЗАПАСНОЙ вариант ──────
+            // verification_codes не используем — botCode хранится прямо в заказе
             let verifCodes = {};
-            try {
-                if (_fbDB && _fbApp && typeof _fbApp._fbRef === 'function') {
-                    const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
-                    const vcSnap = await get(_fbApp._fbRef(_fbDB, 'verification_codes'));
-                    verifCodes = vcSnap.val() || {};
-                    console.log('[VerifCodes] Загружено из Firebase:', Object.keys(verifCodes).length, 'кодов');
-                }
-            } catch(e) {
-                console.warn('[VerifCodes] Ошибка чтения из Firebase:', e.message);
-            }
-
             const verifDbUpdates = [];
             let newLinked = 0;
 
@@ -5966,13 +5948,8 @@
                         console.log('[VerifCode] ✅ Найден по заказу botCode=' + (mo.botCode||mo.receiptNum), '→', linkedPhone);
                     }
 
-                    // 2. Если не нашли в orders — ищем в verification_codes Firebase
-                    if (!linkedPhone && verifCodes[text] && !verifCodes[text].used) {
-                        linkedPhone = verifCodes[text].phone || '';
-                        linkedName  = verifCodes[text].name  || linkedName;
-                        verifKey    = text;
-                        console.log('[VerifCode] ✅ Найден в Firebase verification_codes →', linkedPhone);
-                    }
+                    // verification_codes Firebase убраны (Permission denied)
+                    // Работаем только через botCode из заказа
 
                     if (!linkedPhone) {
                         console.log('[VerifCode] ❌ Код', text, 'не найден ни в заказах, ни в Firebase');
@@ -5981,13 +5958,6 @@
                     }
 
                     if (linkedPhone) {
-                        // Помечаем код как использованный в Firebase
-                        if (verifKey && _fbDB && _fbApp && _fbApp._fbSet) {
-                            verifDbUpdates.push(_fbApp._fbSet(
-                                _fbApp._fbRef(_fbDB, 'verification_codes/' + verifKey),
-                                { used: true, linkedUserId: userId, linkedAt: Date.now() }
-                            ));
-                        }
                         // Привязываем телефон к подписчику
                         const existingByPhone = subs.find(x => normPhone(x.phone) === normPhone(linkedPhone));
                         if (existingByPhone) {
@@ -6205,8 +6175,10 @@
             return;
         }
 
-        const tpl = c[tplKey];
-        if (!tpl) { console.warn('MAX Bot: нет шаблона', tplKey); return; }
+        // Also check textarea directly in case _cloud.bot is stale
+        const tplFromEl = (document.getElementById('bot-tpl-' + tplKey.replace('tpl','').toLowerCase()) || {}).value || '';
+        const tpl = c[tplKey] || tplFromEl;
+        if (!tpl) { console.warn('MAX Bot: нет шаблона', tplKey, '(проверьте настройки бота)'); return; }
 
         const text   = botFillTemplate(tpl, o, num);
         const result = await maxBotRequest('POST', `/messages?user_id=${sub.userId}`, { text, format: 'markdown' });
