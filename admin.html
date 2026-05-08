@@ -2096,6 +2096,12 @@
                         <button class="btn btn-success" onclick="createNewTT()">🏪 Создать торговую точку</button>
                     </div>
                 </div>
+                <!-- Сброс к заводским настройкам -->
+                <div style="margin-top:16px;padding:14px 16px;background:#fff1f2;border:1px solid #fecdd3;border-radius:10px">
+                    <div style="font-size:12px;font-weight:700;color:#9f1239;margin-bottom:8px">⚠️ Опасная зона</div>
+                    <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Полный сброс: удаляет все заказы, историю, настройки ботов, подписчиков. Оставляет одну ТТ «Первая» с учёткой admin/1111.</div>
+                    <button class="btn btn-danger btn-sm" onclick="masterResetToDefaults()">🗑 Сброс к заводским настройкам</button>
+                </div>
                 <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">
                     <button class="btn btn-outline" onclick="closeModal('settingsModal')">Закрыть</button>
                 </div>
@@ -2585,7 +2591,7 @@
                 </div>
                 ${tt.id === cur ? '<span class="badge badge-superadmin" style="font-size:10px">Активная</span>' : ''}
                 <div style="display:flex;gap:6px;margin-left:auto">
-                    <button class="btn btn-outline btn-sm" onclick="renameTTPrompt('${tt.id}')">✏️ Переим.</button>
+                    <button class="btn btn-outline btn-sm" onclick="renameTTPrompt('${tt.id}')">✏️ Ред.</button>
                     ${tt.id !== cur ? `<button class="btn btn-sm" style="background:#7c3aed;color:white" onclick="switchToTTFromSettings('${tt.id}')">↗ Войти</button>` : ''}
                     ${list.length > 1 ? `<button class="btn btn-danger btn-sm" onclick="deleteTTConfirm('${tt.id}')">✕</button>` : ''}
                 </div>
@@ -2594,18 +2600,61 @@
     }
 
     function renameTTPrompt(ttId) {
-        const name = prompt('Введите новое название ТТ:', getTTName(ttId));
-        if (!name || !name.trim()) return;
+        openEditTTModal(ttId);
+    }
+
+    function openEditTTModal(ttId) {
         const list = getTTList();
-        const tt = list.find(t => t.id === ttId);
+        const tt = list.find(function(t) { return t.id === ttId; });
+        if (!tt) return;
+
+        // Создаём модальное окно редактирования
+        var existing = document.getElementById('edit-tt-modal');
+        if (existing) existing.remove();
+
+        var modal = document.createElement('div');
+        modal.id = 'edit-tt-modal';
+        modal.className = 'modal-overlay';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:10100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)';
+        modal.innerHTML = '<div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;margin:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">' +
+            '<div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:16px">✏️ Редактировать ТТ</div>' +
+            '<div style="display:flex;flex-direction:column;gap:12px">' +
+            '<div><label style="font-size:12px;color:#6b7280;font-weight:600;display:block;margin-bottom:4px">Название ТТ *</label>' +
+            '<input id="edit-tt-name" type="text" value="' + esc(tt.name) + '" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d1d5db;border-radius:8px;font-size:14px"></div>' +
+            '<div><label style="font-size:12px;color:#6b7280;font-weight:600;display:block;margin-bottom:4px">Адрес для клиентов</label>' +
+            '<input id="edit-tt-addr" type="text" value="' + esc(tt.clientAddress || '') + '" placeholder="ул. Ленина, 12" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d1d5db;border-radius:8px;font-size:14px"></div>' +
+            '</div>' +
+            '<div style="display:flex;gap:10px;margin-top:20px">' +
+            '<button class="btn btn-primary" style="flex:1" id="edit-tt-save-btn">💾 Сохранить</button>' +
+            '<button class="btn btn-outline" style="flex:1" id="edit-tt-cancel-btn">Отмена</button>' +
+            '</div>' +
+        '</div>';
+        document.body.appendChild(modal);
+        // Привязываем обработчики к кнопкам
+        var saveBtn = document.getElementById('edit-tt-save-btn');
+        if (saveBtn) saveBtn.onclick = function() { saveEditTT(ttId); };
+        var cancelBtn = modal.querySelector('.btn-outline');
+        if (cancelBtn) cancelBtn.onclick = function() { modal.remove(); };
+        setTimeout(function() { var inp = document.getElementById('edit-tt-name'); if (inp) { inp.focus(); inp.select(); } }, 50);
+    }
+
+    function saveEditTT(ttId) {
+        var name = (document.getElementById('edit-tt-name') || {}).value || '';
+        var addr = (document.getElementById('edit-tt-addr') || {}).value || '';
+        if (!name.trim()) { alert('Введите название ТТ'); return; }
+        var list = getTTList();
+        var tt = list.find(function(t) { return t.id === ttId; });
         if (tt) {
             tt.name = name.trim();
+            tt.clientAddress = addr.trim();
             saveTTList(list);
             renderTTList();
             updateTTBar();
             updateLoginTTButton();
             updateSATTDisplay();
         }
+        var m = document.getElementById('edit-tt-modal');
+        if (m) m.remove();
     }
 
     function deleteTTConfirm(ttId) {
@@ -2839,6 +2888,11 @@
             return true;
         } catch { return false; }
     }
+    // ═══════════════════════════════════════════════════════════════════
+    // ВЕРСИЯ ПРОГРАММЫ — защита от затирания данных старыми файлами
+    // ═══════════════════════════════════════════════════════════════════
+    const APP_VERSION = 'V1';
+
     const TZ          = 'Asia/Chita';
     const MASTER_PASS = '4892';
     const _SUPER_PASS_DEFAULT = '9208';
@@ -2931,6 +2985,11 @@
     // Применяет данные из Firebase priem_cfg в _cloud (вызывается только при явном get(), не из listener)
     function applyCloudCfg(data) {
         if (!data) return;
+        // Защита: игнорируем данные из файлов без версии V1
+        if (data._appVersion && data._appVersion !== 'V1') {
+            console.warn('[SaveGuard] Данные из версии', data._appVersion, 'игнорируются — ожидается V1');
+            return;
+        }
 
         if (data.connection && typeof data.connection === 'object') {
             _cloud.connection = data.connection;
@@ -4939,13 +4998,13 @@
 
     // ── Firebase конфиг вшит — работает на любом устройстве без настройки ──────
     const _DEFAULT_FB_CFG = {
-        apiKey:            "AIzaSyBnLWmTanNyIbGGi2J1VgqVtGxvy9rsOCU",
-        authDomain:        "shawarma-armenian.firebaseapp.com",
-        databaseURL:       "https://shawarma-armenian-default-rtdb.europe-west1.firebasedatabase.app",
-        projectId:         "shawarma-armenian",
-        storageBucket:     "shawarma-armenian.firebasestorage.app",
-        messagingSenderId: "1029859566105",
-        appId:             "1:1029859566105:web:31edcf21a99fab9e488088"
+        apiKey:            "",
+        authDomain:        "",
+        databaseURL:       "",
+        projectId:         "",
+        storageBucket:     "",
+        messagingSenderId: "",
+        appId:             ""
     };
 
     // Firebase config — ОСТАЁТСЯ в localStorage (нужен до подключения к Firebase)
@@ -4991,6 +5050,11 @@
     let _cfgSyncTimer = null;
 
     function saveCfgToCloud() {
+        // Защита: не сохраняем если версия файла не V1
+        if (typeof APP_VERSION === 'undefined' || APP_VERSION !== 'V1') {
+            console.warn('[SaveGuard] Сохранение заблокировано: файл без версии V1');
+            return;
+        }
         // Дебаунс 1500 мс
         clearTimeout(_cfgSyncTimer);
         _cfgSyncTimer = setTimeout(_saveCfgNow, 1500);
@@ -5096,6 +5160,8 @@
     // Сохраняет данные текущей ТТ в Firebase
     async function _saveCfgNow() {
         if (!_fbDB || !_fbApp && _fbApp._fbSet) return;
+        // Штампуем версию перед сохранением
+        _cloud._appVersion = APP_VERSION;
         try {
             await _saveTTDataToCloud(getCurrentTTId());
             await _saveTTListToCloud();
@@ -7577,6 +7643,77 @@
     }
 
     // ── Visibility для новых вкладок ──────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════
+    // ── СБРОС К ЗАВОДСКИМ НАСТРОЙКАМ ──────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════
+
+    async function masterResetToDefaults() {
+        if (!isSuperAdmin()) return;
+        var msg = 'Вы уверены что хотите выполнить полный сброс?\n\n' +
+            'Будет удалено:\n' +
+            '• Все заказы и история\n' +
+            '• Настройки подключения Firebase\n' +
+            '• Настройки ботов и подписчики\n' +
+            '• Все ТТ кроме "Первая"\n\n' +
+            'Останется одна ТТ "Первая" с учёткой admin/1111\n' +
+            'Суперадмин не изменится.\n\n' +
+            'Введите мастер-пароль для подтверждения:';
+        var pass = prompt(msg);
+        if (pass !== _MASTER_PASS) { alert('Неверный мастер-пароль. Сброс отменён.'); return; }
+
+        if (!confirm('ФИНАЛЬНОЕ ПОДТВЕРЖДЕНИЕ: удалить все данные?')) return;
+
+        // 1. Очищаем Firebase если подключён
+        if (_fbDB && _fbApp && _fbApp._fbSet && _fbApp._fbRef) {
+            try {
+                var { remove } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
+                // Удаляем заказы ТТ1
+                await remove(_fbApp._fbRef(_fbDB, 'orders')).catch(function() {});
+                // Удаляем priem_cfg (настройки)
+                var defCfg = {
+                    au: btoa('admin'), ap: btoa('1111'),
+                    users: [{ id:'u1', name:'Администратор', role:'admin', login:'admin', pass:'1111' }],
+                    _appVersion: APP_VERSION
+                };
+                await _fbApp._fbSet(_fbApp._fbRef(_fbDB, 'priem_cfg'), defCfg).catch(function() {});
+                // Удаляем глобальные данные
+                await remove(_fbApp._fbRef(_fbDB, 'global/bot_subscribers')).catch(function() {});
+                await remove(_fbApp._fbRef(_fbDB, 'history')).catch(function() {});
+                // Удаляем все дополнительные ТТ
+                var list = getTTList();
+                for (var i = 1; i < list.length; i++) {
+                    await remove(_fbApp._fbRef(_fbDB, list[i].id)).catch(function() {});
+                }
+            } catch(e) { console.warn('[Reset]', e); }
+        }
+
+        // 2. Очищаем localStorage
+        var keysToKeep = ['current_tt', 'app_global_scale'];
+        var allKeys = [];
+        for (var i = 0; i < localStorage.length; i++) allKeys.push(localStorage.key(i));
+        allKeys.forEach(function(key) {
+            if (!keysToKeep.includes(key)) {
+                try { localStorage.removeItem(key); } catch(e) {}
+            }
+        });
+
+        // 3. Сбрасываем ТТ список — одна ТТ "Первая"
+        var firstTT = [{ id: 'tt_1', name: 'Первая', clientAddress: '', ordersPath: 'orders' }];
+        localStorage.setItem('tt_list', JSON.stringify(firstTT));
+        localStorage.setItem('current_tt', 'tt_1');
+
+        // 4. Сбрасываем _cloud
+        _cloud = {
+            connection: {}, notif: {}, bot: {}, bot2: {}, botAlerts: {},
+            appearance: {}, users: [{ id:'u1', name:'Администратор', role:'admin', login:'admin', pass:'1111' }],
+            security: {}, history: [], subscribers: [], counter: { date:'', val:0 },
+            _appVersion: APP_VERSION
+        };
+
+        alert('✅ Сброс выполнен! Страница перезагрузится.');
+        setTimeout(function() { location.reload(); }, 500);
+    }
+
     function updateBlockAccountsTabVisibility() {
         const btn = document.getElementById('stab-btn-block-accounts');
         if (btn) btn.style.display = isSuperAdmin() ? '' : 'none';
