@@ -1531,6 +1531,17 @@
                     </div>
                 </div>
 
+                <div class="modal-section">
+                    <div class="modal-section-title">📦 Шаблон: Заказ выдан <span style="font-size:10px;color:#6b7280">(кнопка «Выдать»)</span></div>
+                    <textarea class="s-input tpl-ta" id="bot-tpl-issued" rows="3" style="font-size:13px;font-family:monospace;resize:vertical">📦 {name}, ваш заказ выдан! Приятного аппетита! 🍽</textarea>
+                </div>
+                <div class="modal-section">
+                    <div class="modal-section-title">👋 Шаблон: Приветствие нового подписчика</div>
+                    <textarea class="s-input tpl-ta" id="bot-tpl-welcome" rows="4" style="font-size:13px;font-family:monospace;resize:vertical">✅ Готово! Буду присылать статус заказов.
+
+📋 Отправьте 4-значный номер чека чтобы привязать ваш телефон.</textarea>
+                </div>
+
                 <!-- Шаблон выдачи заказа -->
                 <div class="modal-section">
                     <div class="modal-section-title" style="display:flex;align-items:center;gap:8px">
@@ -1584,7 +1595,7 @@
                             <div style="display:flex;align-items:center;gap:4px;">
                                 <input type="number" id="bot-poll-interval" min="5" max="3600" value="30"
                                     style="width:54px;padding:2px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;text-align:center;"
-                                    onchange="setBotPollInterval(this.value)"
+                                    onchange="setBotPollInterval(this.value); saveBotSettings()"
                                     title="Интервал опроса в секундах">
                                 <span style="font-size:11px;color:#6b7280;">сек</span>
                             </div>
@@ -2006,6 +2017,19 @@
                     <label class="field-lbl">Chat ID получателя <span class="sub">(для отправки системных оповещений)</span></label>
                     <input class="s-input" type="text" id="bot2-admin-chatid" placeholder="Например: 123456789" style="font-family:monospace" oninput="saveBot2Settings()">
                     <div style="font-size:12px;color:#6b7280;margin-top:-10px">Укажите chat_id суперадмина или группы для получения системных уведомлений</div>
+                </div>
+                <!-- CORS прокси для Бота 2 -->
+                <div class="modal-section" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:14px 16px;">
+                    <div class="modal-section-title" style="color:#c2410c;border-bottom-color:#fed7aa">🔀 CORS-прокси для браузера</div>
+                    <p style="font-size:12px;color:#6b7280;margin-bottom:12px;line-height:1.5">Браузер блокирует прямые запросы к <code>platform-api.max.ru</code>. Выберите режим.</p>
+                    <label class="field-lbl">Режим запросов</label>
+                    <select class="s-input" id="bot2-proxy" onchange="saveBot2Settings()" style="margin-bottom:0">
+                        <option value="">Без прокси — прямой запрос ✅ (рекомендуется)</option>
+                        <option value="https://corsproxy.io/?">CORSProxy.io</option>
+                    </select>
+                    <div style="margin-top:8px;font-size:12px;color:#92400e;background:#fef3c7;padding:8px 10px;border-radius:6px;border:1px solid #fde68a">
+                        ⚡ Добавляется <b>?timeout=0</b> — сервер отвечает сразу. Прокси обычно не нужен.
+                    </div>
                 </div>
                 <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">
                     <button class="btn btn-primary" onclick="saveBot2Settings()">💾 Сохранить</button>
@@ -2687,9 +2711,11 @@
         const tokenEl   = document.getElementById('bot2-token');
         const enabledEl = document.getElementById('bot2-enabled');
         const chatEl    = document.getElementById('bot2-admin-chatid');
-        if (tokenEl)   tokenEl.value    = c.token   || '';
-        if (enabledEl) enabledEl.checked = !!c.enabled;
-        if (chatEl)    chatEl.value      = c.chatId  || '';
+        const proxyEl   = document.getElementById('bot2-proxy');
+        if (tokenEl)   tokenEl.value     = c.token   || '';
+        if (enabledEl) enabledEl.checked  = !!c.enabled;
+        if (chatEl)    chatEl.value       = c.chatId  || '';
+        if (proxyEl)   proxyEl.value      = c.proxy   || '';
         updateBot2Status();
     }
 
@@ -2698,9 +2724,11 @@
         const tokenEl   = document.getElementById('bot2-token');
         const enabledEl = document.getElementById('bot2-enabled');
         const chatEl    = document.getElementById('bot2-admin-chatid');
+        const proxyEl   = document.getElementById('bot2-proxy');
         if (tokenEl)   c.token   = tokenEl.value.trim();
         if (enabledEl) c.enabled = enabledEl.checked;
         if (chatEl)    c.chatId  = chatEl.value.trim();
+        if (proxyEl)   c.proxy   = proxyEl.value;
         saveBot2Cfg(c);
         updateBot2Status();
     }
@@ -2751,10 +2779,18 @@
         const targetId = chatId || c.chatId;
         if (!targetId) return false;
         try {
-            const url = `https://platform-api.max.ru/v1/messages?access_token=${encodeURIComponent(c.token)}`;
-            const body = { recipient: { chat_id: Number(targetId) }, text };
-            const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-            return resp.ok;
+            const base = 'https://platform-api.max.ru';
+            const path = '/v1/messages?access_token=' + encodeURIComponent(c.token);
+            const body = JSON.stringify({ recipient: { chat_id: Number(targetId) }, text: text });
+            const opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body };
+            let resp;
+            try { resp = await fetch(base + path, opts); }
+            catch(e) {
+                const px = c.proxy || '';
+                if (!px) throw e;
+                resp = await fetch(px + encodeURIComponent(base + path), opts);
+            }
+            return resp && resp.ok;
         } catch { return false; }
     }
     const TZ          = 'Asia/Chita';
@@ -2902,9 +2938,15 @@
             if (data.superPassChangedAt) localStorage.setItem('super_pass_changed_at', data.superPassChangedAt);
             if (data.superPassChangedBy) localStorage.setItem('super_pass_changed_by', data.superPassChangedBy);
         }
-        if (data.pollInterval) {
+        if (data.pollInterval || (data.bot && data.bot.pollInterval)) {
+            const pv = data.pollInterval || data.bot.pollInterval;
             const _pie = document.getElementById('bot-poll-interval');
-            if (_pie) _pie.value = data.pollInterval;
+            if (_pie) _pie.value = pv;
+            _cloud.pollInterval = pv;
+        }
+        if (data.bot && data.bot.autopollEnabled !== undefined) {
+            const _at = document.getElementById('bot-autopoll-toggle');
+            if (_at) _at.checked = data.bot.autopollEnabled;
         }
         try { applyAppearanceEngine(); } catch(e){}
         try { updateHeader(); } catch(e){}
@@ -3008,7 +3050,7 @@
         const hideTg = !isSuperAdmin() && (sec.hideTgTabs !== false);
         if (bTg)    bTg.style.display    = (hide || hideTg) ? 'none' : '';
         if (bTgS)   bTgS.style.display   = (hide || hideTg) ? 'none' : '';
-        if (bAlerts) bAlerts.style.display = hide ? 'none' : '';
+        if (bAlerts) bAlerts.style.display = isSuperAdmin() ? '' : 'none';
 
         // Бот 2, ТТ и Подписка — только для супер-администратора
         const bBot2 = document.getElementById('stab-btn-bot2');
@@ -3932,8 +3974,12 @@
         const amtTo    = document.getElementById('rep-amt-to').value   !== '' ? parseFloat(document.getElementById('rep-amt-to').value)   : null;
         const ttFilter = (document.getElementById('rep-tt')||{}).value || '';
 
-        ['issued','canceled'].forEach(type => {
-            let rows = allOrders.filter(o => {
+        const runReport = async () => {
+            const repOrders = isSuperAdmin() ? await loadAllTTOrders() : allOrders;
+            ['issued','canceled'].forEach(type => {
+            const seenR = new Set();
+            let rows = repOrders.filter(o => {
+                if (seenR.has(o.id)) return false; seenR.add(o.id);
                 if (o.status !== type) return false;
                 const d = isoDate(type === 'issued' ? o.issuedAt : o.canceledAt);
                 if (dateFrom && d < dateFrom) return false;
@@ -3977,6 +4023,8 @@
                 </tr>`;
             }).join('');
         });
+        };
+        runReport().catch(e => console.warn('[Report]', e));
     }
 
     function resetReport() {
@@ -3990,6 +4038,32 @@
 
     // ── Клиенты (СУПЕР-АДМИН) ─────────────────────────────────────────────────────
 
+    // ── Загрузка заказов со ВСЕХ ТТ для суперадмина ─────────────────────────
+    let _allTTOrders = null, _allTTOrdersAt = 0;
+    async function loadAllTTOrders() {
+        if (_allTTOrders && (Date.now() - _allTTOrdersAt < 30000)) return _allTTOrders;
+        if (!_fbDB || !_fbApp || !_fbApp._fbRef) { return [...allOrders]; }
+        try {
+            const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
+            const list = getTTList(), combined = [], seenIds = new Set();
+            for (const tt of list) {
+                const path = tt.ordersPath || (tt.id === 'tt_1' ? 'orders' : tt.id + '/orders');
+                try {
+                    const snap = await get(_fbApp._fbRef(_fbDB, path));
+                    Object.values(snap.val() || {}).forEach(o => {
+                        if (!o || !o.createdAt || seenIds.has(o.id)) return;
+                        seenIds.add(o.id);
+                        if (!o.ttName && tt.name) o.ttName = tt.name;
+                        if (o.customerPhone) o.customerPhone = normPhone(o.customerPhone) || o.customerPhone;
+                        combined.push(o);
+                    });
+                } catch(e) {}
+            }
+            _allTTOrders = combined; _allTTOrdersAt = Date.now();
+            return combined;
+        } catch(e) { return [...allOrders]; }
+    }
+
     function applyClientsFilters() {
         _fillClientsTTSelect();
         const dateFrom   = document.getElementById('clients-date-from').value;
@@ -3998,7 +4072,10 @@
         const phoneVal   = document.getElementById('clients-phone').value.toLowerCase().trim();
         const ttFilter   = (document.getElementById('clients-tt')||{}).value || '';
 
-        const periodOrders = allOrders.filter(o => {
+        const tbody = document.getElementById('tbody-clients');
+        const run = async () => {
+            const orders = isSuperAdmin() ? await loadAllTTOrders() : allOrders;
+            const periodOrders = orders.filter(o => {
             const d = isoDate(o.createdAt);
             if (dateFrom && d < dateFrom) return false;
             if (dateTo   && d > dateTo)   return false;
@@ -4019,9 +4096,10 @@
             clientsMap[o.customerPhone].name = o.customerName;
             if(o.ttName) clientsMap[o.customerPhone].ttName = o.ttName;
 
-            clientsMap[o.customerPhone].totalCount++;
-            clientsMap[o.customerPhone].totalSum += o.amount;
-
+            if (o.status === 'accepted' || o.status === 'issued') {
+                clientsMap[o.customerPhone].totalCount++;
+                clientsMap[o.customerPhone].totalSum += (o.amount || 0);
+            }
             if(o.status === 'canceled') {
                 clientsMap[o.customerPhone].cancelCount++;
                 clientsMap[o.customerPhone].cancelSum += o.amount;
@@ -4038,17 +4116,15 @@
             return true;
         });
 
-        clientsArr.sort((a,b) => b.totalCount - a.totalCount);
+            clientsArr.sort((a,b) => b.totalCount - a.totalCount);
 
-        document.getElementById('clients-count').textContent = clientsArr.length;
-        const tbody = document.getElementById('tbody-clients');
-
-        if(!clientsArr.length) {
-            tbody.innerHTML = '<tr><td colspan="9" class="no-data">Нет данных по клиентам за период</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = clientsArr.map(c => {
+            document.getElementById('clients-count').textContent = clientsArr.length;
+            if (!tbody) return;
+            if(!clientsArr.length) {
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">Нет данных</td></tr>';
+                return;
+            }
+            tbody.innerHTML = clientsArr.map(c => {
             const botSub = isSubPhone(c.phone);
             const botIcon = botSub ? `<span title="Подписан на MAX бота" style="font-size:18px;">🤖</span>` : '<span style="color:#d1d5db">—</span>';
             return `<tr>
@@ -4066,6 +4142,8 @@
                 </td>
             </tr>`;
         }).join('');
+        };
+        run().catch(e => { if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="no-data">Ошибка загрузки</td></tr>'; });
     }
 
     let _broadcastTarget = 'all';
@@ -5137,6 +5215,16 @@
                 }
             });
 
+            onValue(ref(_fbDB, 'global/bot_subscribers'), function(snap) {
+                const data = snap.val();
+                if (!Array.isArray(data) || !data.length) return;
+                if (data.length > (_cloud.subscribers || []).length) {
+                    _cloud.subscribers = data;
+                    try { localStorage.setItem('bot_subscribers', JSON.stringify(data)); } catch(e) {}
+                    try { renderBotSubscribers(); } catch(e) {}
+                }
+            });
+
             // ── 3. Слушаем global/tt_list — чтобы получать новые ТТ с других устройств
             _fbOffGlobal = onValue(ref(_fbDB, 'global/tt_list'), (snap) => {
                 const gd = snap.val();
@@ -5641,7 +5729,14 @@
         if (t1) c.tplNew = t1.value;
         if (t2) c.tplAccepted = t2.value;
         if (t3) c.tplReady = t3.value;
+        const t4 = document.getElementById('bot-tpl-issued'); if (t4) c.tplIssued = t4.value;
+        const t5 = document.getElementById('bot-tpl-welcome'); if (t5) c.tplWelcome = t5.value;
+        const pi = document.getElementById('bot-poll-interval');
+        if (pi) c.pollInterval = parseInt(pi.value) || 30;
+        const at = document.getElementById('bot-autopoll-toggle');
+        if (at) c.autopollEnabled = at.checked;
         saveBotCfgStore(c);
+        _cloud.pollInterval = c.pollInterval;
         updateBotStatusUI();
         setTimeout(startBotAutopoll, 500);
     }
@@ -6347,6 +6442,11 @@
             const title = count > 1 ? `📦 ${count} новых заказа` : '📦 Новый заказ';
             const body  = o0 ? `${o0.customerName} · ${o0.deliveryType === 'pickup' ? 'Самовывоз' : 'Доставка'}` : '';
             sendPushNotif(title, body, !!c.vibrate);
+        }
+
+        // Вызов системного пуш-уведомления Android (шторка и экран блокировки)
+        if (window.AndroidBridge && typeof window.AndroidBridge.showNotification === 'function') {
+            window.AndroidBridge.showNotification("Новый заказ!", "Поступил новый заказ в системе");
         }
     }
 
@@ -8319,7 +8419,7 @@
 
     function getAutoReceiptNumSetting() {
         const app = getAppearance();
-        return app.autoReceiptNum !== false; // по умолчанию включено если задано
+        return app.autoReceiptNum === true; // только явное true
     }
 
     function saveAutoReceiptNum() {
@@ -8352,12 +8452,15 @@
     }
 
     function _autoFillReceiptNum() {
-        const a = getAppearance();
-        if (!a.autoReceiptNum) return;
-        const today = chitaToday();
-        const cur = ((_cloud.counter || {}).date === today ? ((_cloud.counter || {}).val || 0) : 0);
-        const inp = document.getElementById('accept-num-input');
-        if (inp && !inp.value) inp.value = cur + 1;
+        if (!getAutoReceiptNumSetting()) return;
+        setTimeout(function() {
+            const inp = document.getElementById('accept-num-input');
+            if (!inp) return;
+            const today = chitaToday();
+            const cur = ((_cloud.counter || {}).date === today ? ((_cloud.counter || {}).val || 0) : 0);
+            inp.value = cur + 1;
+            inp.style.borderColor = '#10b981';
+        }, 50);
     }
 
     // Сброс счётчика каждый день — вызываем при старте и каждый час
