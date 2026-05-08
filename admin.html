@@ -5465,26 +5465,54 @@
     }
 
     function sendPushNotif(title, body, vibrate) {
-        if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-            // fallback: обычный Notification API
-            if (Notification.permission === 'granted') {
-                new Notification(title, { body, tag:'new-order', requireInteraction:true });
-            }
+        // ServiceWorker Push (браузер)
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type:'SHOW_NOTIF', title, body, icon:'', vibrate });
             return;
         }
-        navigator.serviceWorker.controller.postMessage({ type:'SHOW_NOTIF', title, body, icon:'', vibrate });
+        // Fallback: обычный Notification API
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            new Notification(title, { body, tag:'new-order', requireInteraction:true });
+        }
+    }
+
+
+
+
+
+
+
+
+
     }
 
     // Синтез звуков через Web Audio API
     function getAudioCtx() {
         try {
             if (!_notifAudioCtx) _notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            // В Android WebView AudioContext стартует suspended — принудительно разблокируем
+            if (_notifAudioCtx.state === 'suspended') _notifAudioCtx.resume();
             return _notifAudioCtx;
         } catch(e) {
-            console.warn('[Audio] AudioContext недоступен (нет жеста пользователя):', e.message);
+            console.warn('[Audio] AudioContext недоступен:', e.message);
             return null;
         }
     }
+
+    // Разблокируем AudioContext при первом касании (WebView требует жест)
+    (function unlockAudioOnGesture() {
+        const unlock = function() {
+            if (_notifAudioCtx && _notifAudioCtx.state === 'suspended') {
+                _notifAudioCtx.resume();
+            } else if (!_notifAudioCtx) {
+                try { _notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+            }
+            document.removeEventListener('touchstart', unlock, true);
+            document.removeEventListener('click', unlock, true);
+        };
+        document.addEventListener('touchstart', unlock, true);
+        document.addEventListener('click', unlock, true);
+    })();
 
     function previewSound(type) {
         const c = getNotifCfg();
