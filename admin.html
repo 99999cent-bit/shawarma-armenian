@@ -2985,10 +2985,16 @@
     // Применяет данные из Firebase priem_cfg в _cloud (вызывается только при явном get(), не из listener)
     function applyCloudCfg(data) {
         if (!data) return;
-        // Защита: игнорируем данные из файлов без версии V1
+        // Защита от затирания данными старых версий
         if (data._appVersion && data._appVersion !== 'V1') {
-            console.warn('[SaveGuard] Данные из версии', data._appVersion, 'игнорируются — ожидается V1');
+            // Версия явно указана и отличается от V1 — блокируем (например 0V, V0, V2-beta)
+            console.warn('[SaveGuard] ⛔ Данные из версии "' + data._appVersion + '" — заблокированы. Ожидается V1.');
             return;
+        }
+        // Если версии нет вообще — данные из старого файла
+        // Загружаем один раз, но при следующем сохранении проставится V1
+        if (!data._appVersion) {
+            console.info('[SaveGuard] ⚠️ Данные без версии — загружаем и помечаем V1 при следующем сохранении');
         }
 
         if (data.connection && typeof data.connection === 'object') {
