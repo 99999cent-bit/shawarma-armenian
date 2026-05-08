@@ -1260,6 +1260,14 @@
                         <div><div class="toggle-label">Push-уведомление системы</div><div class="toggle-sub">Уведомление ОС (работает при заблокированном экране)</div></div>
                         <label class="toggle"><input type="checkbox" id="notif-push" onchange="saveNotifSettings(); requestNotifPermission()"><span class="tog-slider"></span></label>
                     </div>
+                    <!-- Только для суперадмина -->
+                    <div class="toggle-row" id="notif-sa-row" style="display:none;background:#faf5ff;border-radius:8px;margin-top:8px;border:1px solid #e9d5ff;">
+                        <div>
+                            <div class="toggle-label" style="color:#7c3aed">👑 Уведомления по всем ТТ</div>
+                            <div class="toggle-sub">Суперадмин получает уведомления о новых заказах по всем торговым точкам</div>
+                        </div>
+                        <label class="toggle"><input type="checkbox" id="notif-sa-all-tt" onchange="saveNotifSettings()"><span class="tog-slider"></span></label>
+                    </div>
                 </div>
                 <div class="modal-section">
                     <div class="modal-section-title">🎵 Выбор звука</div>
@@ -2510,6 +2518,7 @@
         // Очищаем заказы — новая ТТ начинает с пустого экрана
         allOrders = [];
         _knownOrderIds = null;
+        _allTTSeenIds = {}; // сбрасываем seen для всех ТТ при переключении
 
         updateBadges();
         applyAll();
@@ -5216,7 +5225,7 @@
 
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 
-            // ── 1. Слушаем заказы: ТТ1 → /orders (сайт), ТТ2+ → /tt_xxx/orders ─
+            // ── 1. Слушаем заказы текущей ТТ (для отображения в таблице) ──────────
             _fbRef = ref(_fbDB, _fbOrdersPath(myTTId));
             _fbOff = onValue(_fbRef, (snap) => {
                 // GUARD: если ТТ уже переключили — игнорируем этот callback
@@ -5235,6 +5244,11 @@
                     setConn('error', 'Ошибка обновления: ' + e.message);
                 }
             }, err => setConn('error', '🔥 Firebase: ' + err.message));
+
+            // ── 1b. СЛУШАЕМ ВСЕ ТТ ПАРАЛЛЕЛЬНО (уведомления на любом устройстве) ──
+            // Каждое устройство подписывается на /orders всех ТТ
+            // чтобы получать пуш-уведомления независимо от того, какая ТТ открыта
+            _subscribeAllTTsForNotifications(ref, onValue);
 
             // ── 2. Слушаем настройки текущей ТТ (priem_cfg) ─────────────────
             // Listener синхронизирует ТОЛЬКО визуальные настройки с других устройств.
@@ -5301,6 +5315,8 @@
                     updateSATTDisplay();
                     // Подписываемся на priem_cfg всех новых ТТ
                     _subscribeAllTTsCfg(cloudList, ref, onValue);
+                    // Подписываемся на заказы новых ТТ для уведомлений
+                    _subscribeAllTTsForNotifications(ref, onValue);
                 }
             });
 
@@ -5412,6 +5428,86 @@
 
     // ── Оповещения ────────────────────────────────────────────────────────────────
 
+    // ════════════════════════════════════════════════════════════════════
+    // ── ПАРАЛЛЕЛЬНЫЕ СЛУШАТЕЛИ ЗАКАЗОВ ВСЕХ ТТ ─────────────────────────
+    // Каждое устройство слушает ВСЕ ТТ — уведомления приходят всегда,
+    // независимо от того, какая ТТ открыта на данном устройстве.
+    // ════════════════════════════════════════════════════════════════════
+
+    let _allTTListeners = {};   // { ttId: unsubscribeFn }
+    let _allTTSeenIds   = {};   // { ttId: Set<orderId> }
+
+    function _subscribeAllTTsForNotifications(refFn, onValueFn) {
+        const list   = getTTList();
+        const myTTId = getCurrentTTId();
+
+        list.forEach(function(tt) {
+            if (tt.id === myTTId) return;        // своя ТТ — уже слушаем через основной listener
+            if (_allTTListeners[tt.id]) return;  // уже подписан
+
+            const path  = tt.ordersPath || (tt.id === 'tt_1' ? 'orders' : tt.id + '/orders');
+            const ttRef = refFn(_fbDB, path);
+
+            const unsub = onValueFn(ttRef, function(snap) {
+                try {
+                    const data = snap.val();
+                    if (!data) return;
+                    const incoming = Object.values(data);
+
+                    // Первая загрузка — просто запоминаем ID, без уведомлений
+                    if (!_allTTSeenIds[tt.id]) {
+                        _allTTSeenIds[tt.id] = new Set(incoming.map(function(o) { return String(o.id); }));
+                        return;
+                    }
+
+                    // Обновляем seen (без уведомлений — каждое устройство само отвечает за СВОЮ тт)
+                    incoming.forEach(function(o) { _allTTSeenIds[tt.id].add(String(o.id)); });
+
+                    // Если это суперадмин — он получает уведомления по всем ТТ (если включено)
+                    if (!isSuperAdmin()) return;
+                    const notifCfg = _cloud.notif || {};
+                    if (notifCfg.saAllTT === false) return; // SA отключил уведомления по всем ТТ
+
+                    const newOrds = incoming.filter(function(o) {
+                        return o.status === 'new' && !_allTTSeenIds[tt.id].has(String(o.id) + '__shown');
+                    });
+                    newOrds.forEach(function(o) { _allTTSeenIds[tt.id].add(String(o.id) + '__shown'); });
+                    if (!newOrds.length) return;
+
+                    const c     = _cloud.notif || {};
+                    const count = newOrds.length;
+                    const o0    = newOrds[0];
+                    const title = '📦 ' + tt.name + ': ' + (count > 1 ? count + ' новых заказа' : 'Новый заказ');
+                    const body  = o0 ? (o0.customerName || '') + ' · ' + (o0.deliveryType === 'pickup' ? 'Самовывоз' : 'Доставка') : '';
+                    sendPushNotif(title, body, !!c.vibrate);
+                    try { if (window.playNotifSound) playNotifSound(); } catch(e) {}
+
+                } catch(e) {
+                    console.warn('[AllTT] ' + tt.name + ':', e.message);
+                }
+            });
+
+            _allTTListeners[tt.id] = unsub;
+        });
+    }
+
+    // Переподписаться при смене списка ТТ или переключении ТТ
+    function _resubscribeAllTTs() {
+        if (!_fbDB || !_fbApp || !_fbApp._fbRef) return;
+        // Отписываемся от старых
+        Object.keys(_allTTListeners).forEach(function(ttId) {
+            try { if (typeof _allTTListeners[ttId] === 'function') _allTTListeners[ttId](); } catch(e) {}
+        });
+        _allTTListeners = {};
+        // Подписываемся заново
+        import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js').then(function(m) {
+            _subscribeAllTTsForNotifications(m.ref, m.onValue);
+        }).catch(function() {});
+    }
+
+    // Получить настройки уведомлений
+    function getNotifCfg() { return _cloud.notif || {}; }
+
     let _knownOrderIds = null; // null = первый запуск, не оповещаем
     let _notifAudioCtx = null;
     let _notifBannerTimer = null;
@@ -5426,6 +5522,10 @@
         if (el('notif-vibrate')) el('notif-vibrate').checked = !!c.vibrate;
         if (el('notif-banner'))  el('notif-banner').checked  = c.banner  !== false;
         if (el('notif-push'))    el('notif-push').checked    = !!c.push;
+        // Суперадминская строка — показываем только SA
+        const saRow = document.getElementById('notif-sa-row');
+        if (saRow) saRow.style.display = isSuperAdmin() ? '' : 'none';
+        if (el('notif-sa-all-tt')) el('notif-sa-all-tt').checked = c.saAllTT !== false; // по умолчанию включено
         const vol = c.volume !== undefined ? c.volume : 80;
         if (el('notif-volume'))  { el('notif-volume').value = vol; }
         if (el('notif-vol-val')) el('notif-vol-val').textContent = vol + '%';
@@ -5449,6 +5549,9 @@
         c.banner   = el('notif-banner')  ? el('notif-banner').checked  : true;
         c.push     = el('notif-push')    ? el('notif-push').checked    : false;
         c.volume   = el('notif-volume')  ? parseInt(el('notif-volume').value) : 80;
+        if (isSuperAdmin() && el('notif-sa-all-tt')) {
+            c.saAllTT = el('notif-sa-all-tt').checked;
+        }
         const r = document.querySelector('input[name="notif-sound-type"]:checked');
         c.soundType = r ? r.value : 'bell';
         saveNotifCfg(c);
