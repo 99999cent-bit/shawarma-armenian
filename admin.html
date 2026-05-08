@@ -334,11 +334,6 @@
 </head>
 <body>
 
-    <button onclick="if(window.AndroidBridge) window.AndroidBridge.showNotification('Тест', 'Связь работает!'); else alert('Мост не найден!');" style="width: 100%; height: 100px; background: red; color: white; font-size: 24px; z-index: 9999; position: relative;">
-    ПРОВЕРИТЬ ANDROID
-</button>
-<div id="app"> 
-...
 <!-- LOGIN -->
 <div class="login-overlay hidden" id="loginOverlay">
     <div class="login-card">
@@ -2758,16 +2753,14 @@
         if (!c.token) { if (result) result.textContent = '⚠️ Укажите токен'; return; }
         if (result) result.textContent = '⏳ Проверка...';
         try {
-            const url = `https://platform-api.max.ru/v1/me?access_token=${encodeURIComponent(c.token)}&timeout=0`;
-            const resp = await fetch(url);
-            const data = await resp.json();
+            const data = await _bot2Req('GET', '/me');
             if (data && (data.name || data.username)) {
-                if (result) result.textContent = `✅ Бот 2: ${data.name || data.username}`;
+                if (result) result.textContent = '✅ Бот 2: ' + (data.name || data.username);
             } else {
-                if (result) result.textContent = '❌ Неверный токен';
+                if (result) result.textContent = '❌ Неверный токен или ошибка';
             }
         } catch(e) {
-            if (result) result.textContent = '❌ Ошибка подключения';
+            if (result) result.textContent = '❌ ' + (e.message || 'Ошибка соединения');
         }
     }
 
@@ -2778,24 +2771,63 @@
         btn.textContent = (inp.type === 'password') ? '👁' : '🙈';
     }
 
+    async function _bot2Req(method, path, body) {
+        const cfg = getBot2Cfg();
+        if (!cfg.token) throw new Error('Нет токена Бота 2');
+
+        const base = 'https://platform-api.max.ru';
+        let safePath = path.startsWith('/') ? path : '/' + path;
+        const directUrl = base + safePath;
+        const proxy = cfg.proxy || '';
+        const proxyUrl = proxy ? proxy + encodeURIComponent(directUrl) : null;
+        const bodyStr = body ? JSON.stringify(body) : undefined;
+        const makeHdr = () => {
+            const h = { 'Authorization': cfg.token };
+            if (bodyStr) h['Content-Type'] = 'application/json';
+            return h;
+        };
+
+        // 1. Android Native Bridge
+        if (window.AndroidBridge && window.AndroidBridge.fetchNoCors) {
+            return new Promise(function(resolve) {
+                const cbId = 'b2_' + Date.now();
+                window.pendingAndroidFetches[cbId] = function(status, respBody) {
+                    try { resolve(JSON.parse(respBody)); } catch(e) { resolve({}); }
+                };
+                window.AndroidBridge.fetchNoCors(method, directUrl, JSON.stringify(makeHdr()), bodyStr || '', cbId);
+            });
+        }
+
+        // 2. Прямой запрос
+        try {
+            const resp = await _fetchTimeout(directUrl, { method, headers: makeHdr(), body: bodyStr }, 10000);
+            if (resp.ok) return await resp.json().catch(function() { return {}; });
+            throw new Error('HTTP ' + resp.status);
+        } catch(e) {
+            console.warn('Bot2 direct err:', e.message, proxyUrl ? '→ прокси' : '');
+        }
+
+        // 3. Через CORS-прокси
+        if (proxyUrl) {
+            try {
+                const resp = await _fetchTimeout(proxyUrl, { method, headers: makeHdr(), body: bodyStr }, 12000);
+                if (resp.ok) return await resp.json().catch(function() { return {}; });
+                throw new Error('HTTP ' + resp.status);
+            } catch(e) {
+                console.warn('Bot2 proxy err:', e.message);
+            }
+        }
+        throw new Error('Bot2: запрос не прошёл ни прямым путём ни через прокси');
+    }
+
     async function sendViaBot2(chatId, text) {
         const c = getBot2Cfg();
         if (!c.token || !c.enabled) return false;
         const targetId = chatId || c.chatId;
         if (!targetId) return false;
         try {
-            const base = 'https://platform-api.max.ru';
-            const path = '/v1/messages?access_token=' + encodeURIComponent(c.token);
-            const body = JSON.stringify({ recipient: { chat_id: Number(targetId) }, text: text });
-            const opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body };
-            let resp;
-            try { resp = await fetch(base + path, opts); }
-            catch(e) {
-                const px = c.proxy || '';
-                if (!px) throw e;
-                resp = await fetch(px + encodeURIComponent(base + path), opts);
-            }
-            return resp && resp.ok;
+            await _bot2Req('POST', '/messages', { recipient: { chat_id: Number(targetId) }, text: text });
+            return true;
         } catch { return false; }
     }
     const TZ          = 'Asia/Chita';
@@ -4279,7 +4311,12 @@
     }
 
     function openClientCard(phone, dateFrom, dateTo) {
-        const periodOrders = allOrders.filter(o => {
+        // Для суперадмина берём заказы из всех ТТ (уже загружены в кэш)
+        const sourceOrders = (isSuperAdmin() && _allTTOrders && _allTTOrders.length)
+            ? _allTTOrders
+            : allOrders;
+
+        const periodOrders = sourceOrders.filter(o => {
             if(o.customerPhone !== phone) return false;
             const d = isoDate(o.createdAt);
             if (dateFrom && d < dateFrom) return false;
@@ -4287,7 +4324,22 @@
             return true;
         });
 
-        if(!periodOrders.length) return;
+        if(!periodOrders.length) {
+            // Может телефон нормализован по-разному — пробуем через normPhone
+            const normP = normPhone(phone) || phone;
+            const byNorm = sourceOrders.filter(o => {
+                if(!o.customerPhone) return false;
+                const np = normPhone(o.customerPhone) || o.customerPhone;
+                if(np !== normP) return false;
+                const d = isoDate(o.createdAt);
+                if (dateFrom && d < dateFrom) return false;
+                if (dateTo   && d > dateTo)   return false;
+                return true;
+            });
+            if(!byNorm.length) return;
+            // Используем нормализованные результаты
+            return openClientCard(byNorm[0].customerPhone, dateFrom, dateTo);
+        }
 
         const clientName = periodOrders[periodOrders.length-1].customerName;
         let successCount = 0; let successSum = 0;
@@ -4295,18 +4347,18 @@
 
         periodOrders.forEach(o => {
             if(o.status === 'canceled') {
-                cancelCount++; cancelSum += o.amount;
+                cancelCount++; cancelSum += (o.amount||0);
             } else {
-                successCount++; successSum += o.amount;
+                successCount++; successSum += (o.amount||0);
             }
         });
 
         const successAvg = successCount > 0 ? Math.round(successSum / successCount) : 0;
-        const cancelAvg = cancelCount > 0 ? Math.round(cancelSum / cancelCount) : 0;
+        const cancelAvg  = cancelCount  > 0 ? Math.round(cancelSum  / cancelCount)  : 0;
 
         let html = `
-            <div style="font-size: 16px; font-weight: bold; margin-bottom: 16px;">${esc(clientName)} <span style="color:#6b7280; font-weight: normal;">(${esc(phone)})</span></div>
-            <div style="font-size: 13px; color: #6b7280; margin-bottom: 16px;">Статистика за период: ${dateFrom||'Всё время'} — ${dateTo||'Всё время'}</div>
+            <div style="font-size:16px;font-weight:bold;margin-bottom:16px">${esc(clientName)} <span style="color:#6b7280;font-weight:normal">(${esc(phone)})</span></div>
+            <div style="font-size:13px;color:#6b7280;margin-bottom:16px">Статистика за период: ${dateFrom||'Всё время'} — ${dateTo||'Всё время'}</div>
 
             <div class="modal-section-title">Успешные заказы (в работе и завершенные)</div>
             <div class="summary-row">
@@ -4315,11 +4367,11 @@
                 <div class="summary-card"><div class="lbl">Средний чек</div><div class="val">${fmtMoney(successAvg)}</div></div>
             </div>
 
-            <div class="modal-section-title" style="color:#991b1b; border-bottom-color:#fecaca;">Отмененные заказы</div>
+            <div class="modal-section-title" style="color:#991b1b;border-bottom-color:#fecaca">Отмененные заказы</div>
             <div class="summary-row">
-                <div class="summary-card" style="border-left-color:#ef4444;"><div class="lbl">Количество</div><div class="val red">${cancelCount}</div></div>
-                <div class="summary-card" style="border-left-color:#ef4444;"><div class="lbl">Потерянная сумма</div><div class="val red">${fmtMoney(cancelSum)}</div></div>
-                <div class="summary-card" style="border-left-color:#ef4444;"><div class="lbl">Средний чек отмены</div><div class="val red">${fmtMoney(cancelAvg)}</div></div>
+                <div class="summary-card" style="border-left-color:#ef4444"><div class="lbl">Количество</div><div class="val red">${cancelCount}</div></div>
+                <div class="summary-card" style="border-left-color:#ef4444"><div class="lbl">Потерянная сумма</div><div class="val red">${fmtMoney(cancelSum)}</div></div>
+                <div class="summary-card" style="border-left-color:#ef4444"><div class="lbl">Средний чек отмены</div><div class="val red">${fmtMoney(cancelAvg)}</div></div>
             </div>
         `;
 
@@ -5442,42 +5494,38 @@
     }
 
     function registerServiceWorker() {
-        if (!('serviceWorker' in navigator)) return;
-        const swCode = `
-    self.addEventListener('message', e => {
-        if (e.data && e.data.type === 'SHOW_NOTIF') {
-            self.registration.showNotification(e.data.title, {
-                body: e.data.body,
-                icon: e.data.icon || '',
-                tag: 'new-order',
-                requireInteraction: true,
-                vibrate: e.data.vibrate ? [200,100,200] : undefined
-            });
-        }
-    });
-    self.addEventListener('notificationclick', e => {
-        e.notification.close();
-        e.waitUntil(clients.matchAll({type:'window'}).then(cs => {
-            const c = cs.find(x => x.focused);
-            if (c) c.focus(); else if (cs.length) cs[0].focus();
-            else clients.openWindow('/');
-        }));
-    });
-    `;
-        const blob = new Blob([swCode], {type:'application/javascript'});
-        const swUrl = URL.createObjectURL(blob);
-        navigator.serviceWorker.register(swUrl).catch(() => {});
+        // blob: URL для SW заблокирован в современных браузерах — используем прямой Notification API
+        // SW регистрация не нужна для showNotification через Notification API
     }
 
     function sendPushNotif(title, body, vibrate) {
-        // ServiceWorker Push (браузер)
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({ type:'SHOW_NOTIF', title, body, icon:'', vibrate });
-            return;
+        // ПРИОРИТЕТ 1: Android нативный мост (шторка, экран блокировки, фоновые уведомления)
+        if (window.AndroidBridge && typeof window.AndroidBridge.showNotification === 'function') {
+            try {
+                window.AndroidBridge.showNotification(title || '📦 Новый заказ', body || '');
+                if (vibrate && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                return; // успешно — выходим
+            } catch(e) {}
         }
-        // Fallback: обычный Notification API
+
+        // ПРИОРИТЕТ 2: Web Notification API (браузер, PWA)
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            new Notification(title, { body, tag:'new-order', requireInteraction:true });
+            try {
+                const n = new Notification(title || '📦 Новый заказ', {
+                    body: body || '',
+                    tag: 'new-order-' + Date.now(),
+                    requireInteraction: true,
+                    silent: !vibrate
+                });
+                n.onclick = function() { window.focus(); n.close(); };
+                if (vibrate && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                return;
+            } catch(e) {}
+        }
+
+        // ПРИОРИТЕТ 3: Service Worker fallback
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'SHOW_NOTIF', title, body, icon: '', vibrate });
         }
     }
 
@@ -6459,17 +6507,12 @@
             showNotifBanner(`${count > 1 ? count + ' новых заказа' : 'Новый заказ'}<br>${details}`);
         }
 
-        // Push
-        if (c.push && Notification.permission === 'granted') {
+        // Push (через AndroidBridge или Web Notification API)
+        if (c.push) {
             const o0 = orders.find(x => String(x.id) === reallyNew[0]);
-            const title = count > 1 ? `📦 ${count} новых заказа` : '📦 Новый заказ';
-            const body  = o0 ? `${o0.customerName} · ${o0.deliveryType === 'pickup' ? 'Самовывоз' : 'Доставка'}` : '';
-            sendPushNotif(title, body, !!c.vibrate);
-        }
-
-        // Вызов системного пуш-уведомления Android (шторка и экран блокировки)
-        if (window.AndroidBridge && typeof window.AndroidBridge.showNotification === 'function') {
-            window.AndroidBridge.showNotification("Новый заказ!", "Поступил новый заказ в системе");
+            const title = count > 1 ? '📦 ' + count + ' новых заказа' : '📦 Новый заказ';
+            const body  = o0 ? o0.customerName + ' · ' + (o0.deliveryType === 'pickup' ? 'Самовывоз' : 'Доставка') : '';
+            sendPushNotif(title, body, !!c.vibrate); // AndroidBridge внутри — приоритет 1
         }
     }
 
@@ -7206,8 +7249,8 @@
         if (el('alert-sc3-max-text')) el('alert-sc3-max-text').value = (c.sc3 || {}).maxText || ALERT_DEFAULTS.sc3.maxText;
         if (el('alert-sc3-tg-text'))  el('alert-sc3-tg-text').value  = (c.sc3 || {}).tgText  || ALERT_DEFAULTS.sc3.tgText;
 
-        renderMaxRecipients(c.maxRecipients || []);
-        renderTgRecipients(c.tgRecipients || []);
+        renderMaxRecipients((c.maxRecipients || []).map(_toRecObj));
+        renderTgRecipients((c.tgRecipients || []).map(_toRecObj));
     }
 
     function saveBotAlertsSettings() {
@@ -7232,40 +7275,62 @@
             maxText: el('alert-sc3-max-text')?.value || '',
             tgText:  el('alert-sc3-tg-text')?.value || '',
         };
-        // Читаем получателей MAX
-        c.maxRecipients = Array.from(document.querySelectorAll('.max-rid-input')).map(i => i.value.trim()).filter(Boolean);
-        // Читаем получателей TG
-        c.tgRecipients = Array.from(document.querySelectorAll('.tg-rid-input')).map(i => i.value.trim()).filter(Boolean);
+        // Читаем получателей MAX (с именем и телефоном)
+        c.maxRecipients = Array.from(document.querySelectorAll('#max-recipients-box .recipient-row')).map(function(row) {
+            return {
+                id:    ((row.querySelector('.max-rid-input')||{}).value||'').trim(),
+                name:  ((row.querySelector('.max-rid-name')||{}).value||'').trim(),
+                phone: ((row.querySelector('.max-rid-phone')||{}).value||'').trim()
+            };
+        }).filter(function(r) { return r.id; });
+        // Читаем получателей TG (с именем и телефоном)
+        c.tgRecipients = Array.from(document.querySelectorAll('#tg-recipients-box .recipient-row')).map(function(row) {
+            return {
+                id:    ((row.querySelector('.tg-rid-input')||{}).value||'').trim(),
+                name:  ((row.querySelector('.tg-rid-name')||{}).value||'').trim(),
+                phone: ((row.querySelector('.tg-rid-phone')||{}).value||'').trim()
+            };
+        }).filter(function(r) { return r.id; });
         _saveAlertCfgForTT(ttId, c);
     }
 
     // ── Рендер получателей MAX ────────────────────────────────────────────────
+    function _toRecObj(r) { return typeof r === 'object' && r ? r : {id: String(r||''), name: '', phone: ''}; }
+
     function renderMaxRecipients(list) {
         const box = document.getElementById('max-recipients-box');
         if (!box) return;
-        if (!list.length) list = [''];
-        box.innerHTML = list.map((id, i) => `
-            <div class="recipient-row">
-                <span style="font-size:12px;color:#6b7280;min-width:85px">🤖 Chat ID ${i+1}:</span>
-                <input class="max-rid-input" type="text" value="${esc(id)}" placeholder="Введите Chat ID" onchange="saveBotAlertsSettings()">
-                ${i > 0 ? `<button class="btn-remove-rid" onclick="removeMaxRecipient(${i})">✕</button>` : ''}
+        const recs = list.length ? list.map(_toRecObj) : [{id:'',name:'',phone:''}];
+        box.innerHTML = recs.map((r, i) => `
+            <div class="recipient-row" style="flex-direction:column;align-items:stretch;gap:4px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                    <span style="font-size:12px;font-weight:600;color:#374151">🤖 Получатель MAX ${i+1}</span>
+                    ${i > 0 ? `<button class="btn-remove-rid" style="margin-left:auto" onclick="removeMaxRecipient(${i})">✕ Удалить</button>` : ''}
+                </div>
+                <input class="max-rid-input" type="text" value="${esc(r.id)}" placeholder="Chat ID *" style="font-family:monospace;font-size:13px" onchange="saveBotAlertsSettings()">
+                <div style="display:flex;gap:6px;margin-top:4px">
+                    <input class="max-rid-name" type="text" value="${esc(r.name||'')}" placeholder="Имя (необязательно)" style="flex:1" onchange="saveBotAlertsSettings()">
+                    <input class="max-rid-phone" type="tel" value="${esc(r.phone||'')}" placeholder="Телефон (необязательно)" style="flex:1;font-family:monospace" onchange="saveBotAlertsSettings()">
+                </div>
             </div>
         `).join('');
     }
     function addMaxRecipient() {
-        saveBotAlertsSettings();
-        const c = getBotAlertsCfg();
-        const list = c.maxRecipients || [];
-        list.push('');
+        saveBotAlertsSettings(); // сохраняем текущие значения
+        const ttId = _getSelectedAlertTTId();
+        const cfg = _getAlertCfgForTT(ttId);
+        const list = (cfg.maxRecipients || []).map(function(r) { return typeof r === 'object' ? r : {id: r, name: '', phone: ''}; });
+        list.push({id: '', name: '', phone: ''});
         renderMaxRecipients(list);
     }
     function removeMaxRecipient(idx) {
         saveBotAlertsSettings();
-        const c = getBotAlertsCfg();
-        const list = c.maxRecipients || [];
+        const ttId = _getSelectedAlertTTId();
+        const cfg = _getAlertCfgForTT(ttId);
+        const list = (cfg.maxRecipients || []).map(_toRecObj);
         list.splice(idx, 1);
-        c.maxRecipients = list;
-        saveBotAlertsCfgStore(c);
+        cfg.maxRecipients = list;
+        _saveAlertCfgForTT(ttId, cfg);
         renderMaxRecipients(list);
     }
 
@@ -7273,29 +7338,37 @@
     function renderTgRecipients(list) {
         const box = document.getElementById('tg-recipients-box');
         if (!box) return;
-        if (!list.length) list = [''];
-        box.innerHTML = list.map((id, i) => `
-            <div class="recipient-row">
-                <span style="font-size:12px;color:#6b7280;min-width:85px">✈️ Chat ID ${i+1}:</span>
-                <input class="tg-rid-input" type="text" value="${esc(id)}" placeholder="Введите Chat ID" onchange="saveBotAlertsSettings()">
-                ${i > 0 ? `<button class="btn-remove-rid" onclick="removeTgRecipient(${i})">✕</button>` : ''}
+        const recs = list.length ? list.map(_toRecObj) : [{id:'',name:'',phone:''}];
+        box.innerHTML = recs.map((r, i) => `
+            <div class="recipient-row" style="flex-direction:column;align-items:stretch;gap:4px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                    <span style="font-size:12px;font-weight:600;color:#374151">✈️ Получатель TG ${i+1}</span>
+                    ${i > 0 ? `<button class="btn-remove-rid" style="margin-left:auto" onclick="removeTgRecipient(${i})">✕ Удалить</button>` : ''}
+                </div>
+                <input class="tg-rid-input" type="text" value="${esc(r.id)}" placeholder="Chat ID *" style="font-family:monospace;font-size:13px" onchange="saveBotAlertsSettings()">
+                <div style="display:flex;gap:6px;margin-top:4px">
+                    <input class="tg-rid-name" type="text" value="${esc(r.name||'')}" placeholder="Имя (необязательно)" style="flex:1" onchange="saveBotAlertsSettings()">
+                    <input class="tg-rid-phone" type="tel" value="${esc(r.phone||'')}" placeholder="Телефон (необязательно)" style="flex:1;font-family:monospace" onchange="saveBotAlertsSettings()">
+                </div>
             </div>
         `).join('');
     }
     function addTgRecipient() {
-        saveBotAlertsSettings();
-        const c = getBotAlertsCfg();
-        const list = c.tgRecipients || [];
-        list.push('');
+        saveBotAlertsSettings(); // сохраняем текущие значения
+        const ttId = _getSelectedAlertTTId();
+        const cfg = _getAlertCfgForTT(ttId);
+        const list = (cfg.tgRecipients || []).map(function(r) { return typeof r === 'object' ? r : {id: r, name: '', phone: ''}; });
+        list.push({id: '', name: '', phone: ''});
         renderTgRecipients(list);
     }
     function removeTgRecipient(idx) {
         saveBotAlertsSettings();
-        const c = getBotAlertsCfg();
-        const list = c.tgRecipients || [];
+        const ttId = _getSelectedAlertTTId();
+        const cfg = _getAlertCfgForTT(ttId);
+        const list = (cfg.tgRecipients || []).map(_toRecObj);
         list.splice(idx, 1);
-        c.tgRecipients = list;
-        saveBotAlertsCfgStore(c);
+        cfg.tgRecipients = list;
+        _saveAlertCfgForTT(ttId, cfg);
         renderTgRecipients(list);
     }
 
@@ -7312,89 +7385,91 @@
     }
 
     async function triggerBlockAlert(scenarioNum, blockedUserNames, extraVarsIn) {
-        const c = getBotAlertsCfg();
+        // Используем конфиг конкретной ТТ, а не весь _cloud.botAlerts
+        const ttId = _getSelectedAlertTTId();
+        const c = _getAlertCfgForTT(ttId);
         const sc = c['sc' + scenarioNum];
         if (!sc || !sc.enabled) return;
 
-        const extraVars = {
-            users: blockedUserNames.join(', '),
-            ...(extraVarsIn || {})
-        };
+        const extraVars = { users: (blockedUserNames || []).join(', ') };
+        if (extraVarsIn) { Object.keys(extraVarsIn).forEach(function(k) { extraVars[k] = extraVarsIn[k]; }); }
         if (scenarioNum === 1 && !extraVars.hours) {
             extraVars.hours = sc.hours || 3;
-            extraVars.unit = sc.unit === 'days' ? 'дн.' : 'ч.';
+            extraVars.unit  = sc.unit === 'days' ? 'дн.' : 'ч.';
         }
 
-        const maxText = alertFormatText(sc.maxText || ALERT_DEFAULTS['sc'+scenarioNum]?.maxText || '', extraVars);
-        const tgText  = alertFormatText(sc.tgText  || ALERT_DEFAULTS['sc'+scenarioNum]?.tgText  || '', extraVars);
+        const defSc = ALERT_DEFAULTS['sc' + scenarioNum] || {};
+        const maxText = alertFormatText(sc.maxText || defSc.maxText || '', extraVars);
+        const tgText  = alertFormatText(sc.tgText  || defSc.tgText  || '', extraVars);
 
-        // MAX Bot
+        // MAX Bot — извлекаем .id из объектов получателей
         const maxCfg = getBotCfg();
         if (maxCfg.token && maxCfg.enabled) {
-            const maxRids = c.maxRecipients || [];
-            for (const rid of maxRids) {
-                if (!rid) continue;
-                try { await maxBotRequest('POST', `/messages?user_id=${rid}`, { text: maxText, format: 'markdown' }); } catch {}
+            const maxRids = (c.maxRecipients || []).map(function(r) { return typeof r === 'object' ? r.id : String(r); }).filter(Boolean);
+            for (var i = 0; i < maxRids.length; i++) {
+                try { await maxBotRequest('POST', '/messages?user_id=' + maxRids[i], { text: maxText, format: 'markdown' }); } catch(e) {}
             }
         }
-        // TG Bot
+        // TG Bot — извлекаем .id из объектов получателей
         const tgCfg = getTgBotCfg();
         if (tgCfg.token && tgCfg.enabled) {
-            const tgRids = c.tgRecipients || [];
-            for (const rid of tgRids) {
-                if (!rid) continue;
-                await tgSendMessage(rid, tgText);
+            const tgRids = (c.tgRecipients || []).map(function(r) { return typeof r === 'object' ? r.id : String(r); }).filter(Boolean);
+            for (var j = 0; j < tgRids.length; j++) {
+                try { await tgSendMessage(tgRids[j], tgText); } catch(e) {}
             }
         }
     }
 
     async function testAlertSend(scenarioNum) {
         saveBotAlertsSettings();
-        const c = getBotAlertsCfg();
+        // Читаем конфиг конкретной ТТ (не весь _cloud.botAlerts)
+        const ttId = _getSelectedAlertTTId();
+        const c  = _getAlertCfgForTT(ttId);
         const sc = c['sc' + scenarioNum];
-        if (!sc) return;
+        if (!sc) {
+            alert('❌ Сценарий ' + scenarioNum + ' не настроен. Сохраните настройки оповещений.');
+            return;
+        }
 
         const maxCfg = getBotCfg();
         const tgCfg  = getTgBotCfg();
-        const maxRids = (c.maxRecipients || []).filter(Boolean);
-        const tgRids  = (c.tgRecipients  || []).filter(Boolean);
+        // Извлекаем строковые ID из объектов {id, name, phone}
+        const maxRids = (c.maxRecipients || []).map(function(r) { return typeof r === 'object' ? r.id : String(r); }).filter(Boolean);
+        const tgRids  = (c.tgRecipients  || []).map(function(r) { return typeof r === 'object' ? r.id : String(r); }).filter(Boolean);
 
         if (!maxCfg.token && !tgCfg.token) {
             alert('❌ Нет настроенных ботов. Заполните токены MAX или Telegram.');
             return;
         }
         if (!maxRids.length && !tgRids.length) {
-            alert('❌ Нет получателей. Добавьте Chat ID в полях выше.');
+            alert('❌ Нет получателей. Добавьте Chat ID в полях ниже.');
             return;
         }
 
         const extraVars = { users: 'Тестовый пользователь', hours: sc.hours || 3, unit: sc.unit === 'days' ? 'дн.' : 'ч.' };
-        const defMax = ALERT_DEFAULTS['sc' + scenarioNum]?.maxText || 'Тестовое сообщение';
-        const defTg  = ALERT_DEFAULTS['sc' + scenarioNum]?.tgText  || 'Тестовое сообщение';
-        const maxText = alertFormatText('[ТЕСТ] ' + (sc.maxText || defMax), extraVars);
-        const tgText  = alertFormatText('[ТЕСТ] ' + (sc.tgText  || defTg), extraVars);
+        const defSc   = ALERT_DEFAULTS['sc' + scenarioNum] || {};
+        const maxText = alertFormatText('[ТЕСТ] ' + (sc.maxText || defSc.maxText || 'Тестовое сообщение'), extraVars);
+        const tgText  = alertFormatText('[ТЕСТ] ' + (sc.tgText  || defSc.tgText  || 'Тестовое сообщение'), extraVars);
 
-        let sent = 0, errors = 0;
+        var sent = 0, errors = 0;
 
         if (maxCfg.token && maxCfg.enabled) {
-            for (const rid of maxRids) {
+            for (var i = 0; i < maxRids.length; i++) {
                 try {
-                    await maxBotRequest('POST', `/messages?user_id=${rid}`, { text: maxText, format: 'markdown' });
+                    await maxBotRequest('POST', '/messages?user_id=' + maxRids[i], { text: maxText, format: 'markdown' });
                     sent++;
-                } catch { errors++; }
+                } catch(e) { errors++; }
             }
-        } else if (maxCfg.token && !maxCfg.enabled) {
-            console.log('[Test] MAX бот выключен, пропускаем');
         }
         if (tgCfg.token && tgCfg.enabled) {
-            for (const rid of tgRids) {
-                const ok = await tgSendMessage(rid, tgText);
-                ok ? sent++ : errors++;
+            for (var j = 0; j < tgRids.length; j++) {
+                try {
+                    var ok = await tgSendMessage(tgRids[j], tgText);
+                    ok ? sent++ : errors++;
+                } catch(e) { errors++; }
             }
-        } else if (tgCfg.token && !tgCfg.enabled) {
-            console.log('[Test] TG бот выключен, пропускаем');
         }
-        alert(`📤 Тест завершён (Сценарий ${scenarioNum}): отправлено ${sent}, ошибок ${errors}`);
+        alert('📤 Тест завершён (Сценарий ' + scenarioNum + '): отправлено ' + sent + ', ошибок ' + errors);
     }
 
     // ── Visibility для новых вкладок ──────────────────────────────────────────
