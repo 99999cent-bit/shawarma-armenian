@@ -5491,14 +5491,15 @@
         });
     }
 
-    // Переподписаться при смене списка ТТ или переключении ТТ
+    // Переподписаться при смене списка ТТ или возврате из фона
     function _resubscribeAllTTs() {
         if (!_fbDB || !_fbApp || !_fbApp._fbRef) return;
-        // Отписываемся от старых
+        // Отписываемся от старых (которые могли стать "мёртвыми")
         Object.keys(_allTTListeners).forEach(function(ttId) {
             try { if (typeof _allTTListeners[ttId] === 'function') _allTTListeners[ttId](); } catch(e) {}
         });
         _allTTListeners = {};
+        _allTTSeenIds   = {}; // сбрасываем seen — первая загрузка не уведомляет
         // Подписываемся заново
         import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js').then(function(m) {
             _subscribeAllTTsForNotifications(m.ref, m.onValue);
@@ -7887,15 +7888,69 @@
     };
 
     // Перерисовка при возврате в приложение (PWA / сворачивание) ──────────
-    document.addEventListener('visibilitychange', () => {
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden') {
+            // Сохраняем текущие ID заказов перед уходом в фон
+            try {
+                if (allOrders.length) {
+                    localStorage.setItem('_bg_order_ids_' + getCurrentTTId(),
+                        JSON.stringify(allOrders.map(function(o) { return String(o.id); }))
+                    );
+                }
+            } catch(e) {}
+            return;
+        }
+
         if (document.visibilityState === 'visible') {
-            // Страница снова видима — обновляем таблицу и бейджи
             updateBadges();
             applyAll();
-            console.log('[App] Страница видима — обновление таблицы');
+            console.log('[App] Страница видима — обновление');
+
+            setTimeout(function() {
+                // Переподключаем параллельные слушатели других ТТ
+                try { _resubscribeAllTTs(); } catch(e) {}
+
+                // Принудительно проверяем свою ТТ — вдруг Firebase пропустил события
+                if (_fbDB && _fbApp && _fbApp._fbRef) {
+                    import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js').then(function(m) {
+                        m.get(m.ref(_fbDB, _fbOrdersPath())).then(function(snap) {
+                            try {
+                                const data = snap.val();
+                                const incoming = data ? Object.values(data) : [];
+                                incoming.forEach(function(o) {
+                                    if (o.customerPhone) o.customerPhone = fixPhone(o.customerPhone);
+                                });
+
+                                // Проверяем заказы которые пришли пока был в фоне
+                                var prevIds = new Set();
+                                try {
+                                    var saved = localStorage.getItem('_bg_order_ids_' + getCurrentTTId());
+                                    if (saved) JSON.parse(saved).forEach(function(id) { prevIds.add(id); });
+                                } catch(e) {}
+
+                                var newWhileBg = incoming.filter(function(o) {
+                                    return o.status === 'new' && prevIds.size > 0 && !prevIds.has(String(o.id));
+                                });
+
+                                allOrders = incoming;
+                                updateBadges();
+                                applyAll();
+
+                                if (newWhileBg.length > 0) {
+                                    console.log('[App] Пришло', newWhileBg.length, 'заказов пока был в фоне');
+                                    // Принудительно сбрасываем _knownOrderIds чтобы checkNewOrders сработал
+                                    _knownOrderIds = null;
+                                    checkNewOrders(incoming);
+                                }
+                            } catch(e) {}
+                        }).catch(function() {});
+                    }).catch(function() {});
+                }
+            }, 800);
         }
     });
-    window.addEventListener('focus', () => {
+
+    window.addEventListener('focus', function() {
         updateBadges();
         applyAll();
     });
