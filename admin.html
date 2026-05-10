@@ -9,9 +9,9 @@
     <title>Управление заказами</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-familySegoe UI', Tahoma, sans-serif; background: #f0f2f5; color: #333; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f0f2f5; color: #333; }
 
-        .login-overlay { position: fixed; inset: 0; background: linear-gradient(135deg,#1a1a2e,#16213e); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+        .login-overlay { position: fixed; inset: 0; background: linear-gradient(135deg,#1a1a2e,#16213e); display: flex; align-items: center; justify-content: center; z-index: 9999; overflow-y: auto; overscroll-behavior: contain; }
         .login-overlay.hidden { display: none; }
         .login-card { background: white; border-radius: 16px; padding: 40px 36px; width: 360px; max-width: 95vw; text-align: center; box-shadow: 0 25px 80px rgba(0,0,0,0.4); }
         .login-logo { font-size: 48px; margin-bottom: 10px; }
@@ -3268,6 +3268,7 @@
 
     function showLogin() {
         document.getElementById('loginOverlay').classList.remove('hidden');
+        document.body.style.overflow = 'hidden'; // блокируем прокрутку под overlay
         document.getElementById('loginPass').value = '';
         document.getElementById('loginError').textContent = '';
         const rb = document.getElementById('loginResetBlock');
@@ -3322,7 +3323,10 @@
             if (lp) { lp.focus(); }
         }, 2000);
     }
-    function hideLogin() { document.getElementById('loginOverlay').classList.add('hidden'); }
+    function hideLogin() {
+        document.getElementById('loginOverlay').classList.add('hidden');
+        document.body.style.overflow = ''; // восстанавливаем прокрутку
+    }
 
     function tryLogin() {
         const pass = document.getElementById('loginPass').value.trim();
@@ -7740,15 +7744,18 @@
                 var { remove } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
                 // Удаляем заказы ТТ1
                 await remove(_fbApp._fbRef(_fbDB, 'orders')).catch(function() {});
-                // Удаляем priem_cfg (настройки)
+                // Записываем в priem_cfg дефолтного пользователя (поле password, как везде в системе)
                 var defCfg = {
-                    au: btoa('admin'), ap: btoa('1111'),
-                    users: [{ id:'u1', name:'Администратор', role:'admin', login:'admin', pass:'1111' }],
-                    _appVersion: APP_VERSION
+                    users: [{ id:'u1', name:'Администратор', role:'admin', password:'1111' }],
+                    security: {}, history: [], appearance: {}, notif: {}, bot: {}, botAlerts: {},
+                    connection: {}, subscribers: [], counter: { date:'', val:0 },
+                    _appVersion: APP_VERSION,
+                    _appBuildVersion: APP_BUILD_VERSION
                 };
                 await _fbApp._fbSet(_fbApp._fbRef(_fbDB, 'priem_cfg'), defCfg).catch(function() {});
                 // Удаляем глобальные данные
                 await remove(_fbApp._fbRef(_fbDB, 'global/bot_subscribers')).catch(function() {});
+                await remove(_fbApp._fbRef(_fbDB, 'global/tt_list')).catch(function() {});
                 await remove(_fbApp._fbRef(_fbDB, 'history')).catch(function() {});
                 // Удаляем все дополнительные ТТ
                 var list = getTTList();
@@ -7777,11 +7784,15 @@
         try {
             _cloud = {
                 connection: {}, notif: {}, bot: {}, bot2: {}, botAlerts: {},
-                appearance: {}, users: [{ id:'u1', name:'Администратор', role:'admin', login:'admin', pass:'1111' }],
+                appearance: {}, users: [{ id:'u1', name:'Администратор', role:'admin', password:'1111' }],
                 security: {}, history: [], subscribers: [], counter: { date:'', val:0 },
-                _appVersion: APP_VERSION
+                _appVersion: APP_VERSION,
+                _appBuildVersion: APP_BUILD_VERSION
             };
         } catch(e) { console.warn('[Reset] _cloud reset error:', e); }
+
+        // 5. Обнуляем заказы в памяти и перерисовываем (чтобы не мелькали при сбросе)
+        try { allOrders = []; if (typeof applyAll === 'function') applyAll(); } catch(e) {}
 
         alert('✅ Сброс выполнен! Страница перезагрузится.');
         // Сбрасываем флаги защиты перед перезагрузкой
