@@ -9,7 +9,7 @@
     <title>Управление заказами</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f0f2f5; color: #333; }
+        body { font-familySegoe UI', Tahoma, sans-serif; background: #f0f2f5; color: #333; }
 
         .login-overlay { position: fixed; inset: 0; background: linear-gradient(135deg,#1a1a2e,#16213e); display: flex; align-items: center; justify-content: center; z-index: 9999; }
         .login-overlay.hidden { display: none; }
@@ -3018,7 +3018,7 @@
     // ══ ОБЛАЧНЫЙ КЭШ — единственный источник истины ══════════════════════════════
     // Данные загружаются из Firebase при старте.
     // localStorage — только резервный кэш при потере сети.
-    const _cloud = {
+    let _cloud = {
         connection:  {}, users: [], security: {}, appearance: {},
         notif: {}, bot: {}, subscribers: [], history: [], counter: { date:'', val:0 }
     };
@@ -7774,12 +7774,14 @@
         localStorage.setItem('current_tt', 'tt_1');
 
         // 4. Сбрасываем _cloud
-        _cloud = {
-            connection: {}, notif: {}, bot: {}, bot2: {}, botAlerts: {},
-            appearance: {}, users: [{ id:'u1', name:'Администратор', role:'admin', login:'admin', pass:'1111' }],
-            security: {}, history: [], subscribers: [], counter: { date:'', val:0 },
-            _appVersion: APP_VERSION
-        };
+        try {
+            _cloud = {
+                connection: {}, notif: {}, bot: {}, bot2: {}, botAlerts: {},
+                appearance: {}, users: [{ id:'u1', name:'Администратор', role:'admin', login:'admin', pass:'1111' }],
+                security: {}, history: [], subscribers: [], counter: { date:'', val:0 },
+                _appVersion: APP_VERSION
+            };
+        } catch(e) { console.warn('[Reset] _cloud reset error:', e); }
 
         alert('✅ Сброс выполнен! Страница перезагрузится.');
         // Сбрасываем флаги защиты перед перезагрузкой
