@@ -1067,15 +1067,16 @@
                     </div>
                     <!-- Экспорт / импорт настроек -->
                     <div style="margin-top:12px;padding-top:12px;border-top:1px solid #ddd8fe">
-                        <div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:8px">💾 Резервная копия настроек</div>
+                        <div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:4px">💾 Резервная копия (полный бекап)</div>
+                        <div style="font-size:11px;color:#7c3aed;margin-bottom:8px">Сохраняет ВСЁ: настройки, пользователей, заказы, историю, ботов, подписчиков, торговые точки и базы данных.</div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap">
-                            <button class="btn btn-primary btn-sm" onclick="exportSettingsToFile()">⬇️ Скачать</button>
-                            <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0">
-                                ⬆️ Загрузить
+                            <button class="btn btn-primary btn-sm" onclick="exportSettingsToFile()" style="background:#7c3aed;display:flex;align-items:center;gap:5px">⬇️ Скачать полный бекап</button>
+                            <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;display:flex;align-items:center;gap:5px">
+                                ⬆️ Восстановить из бекапа
                                 <input type="file" accept=".json" style="display:none" onchange="importSettingsFromFile(this)">
                             </label>
                         </div>
-                        <div style="font-size:11px;color:#8b5cf6;margin-top:4px">Экспорт/импорт: пользователи, бот, шаблоны, настройки.</div>
+                        <div style="font-size:11px;color:#8b5cf6;margin-top:4px">Файл: <code>FULL_BACKUP_ГГГГ-ММ-ДД_ЧЧ-ММ.json</code></div>
                     </div>
                 </div>
 
@@ -1150,14 +1151,18 @@
                 <!-- Ползунок масштаба всего приложения -->
                 <div class="modal-section" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
                     <div style="font-size:12px;font-weight:700;color:#0369a1;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">🔍 Масштаб всего приложения</div>
-                    <div style="display:flex;align-items:center;gap:14px">
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                         <span style="font-size:13px;color:#374151">50%</span>
                         <input type="range" id="app-global-scale" min="50" max="150" step="5" value="100"
-                            style="flex:1;accent-color:#4f46e5"
-                            oninput="document.getElementById('app-scale-val').textContent=this.value+'%'; applyGlobalScale(this.value)">
+                            style="flex:1;min-width:100px;accent-color:#4f46e5"
+                            oninput="syncGlobalScale(this.value,'range')">
                         <span style="font-size:13px;color:#374151">150%</span>
+                        <input type="number" id="app-global-scale-num" min="50" max="150" value="100"
+                            oninput="syncGlobalScale(this.value,'num')"
+                            style="width:68px;border:1px solid #93c5fd;border-radius:6px;padding:5px 8px;font-size:14px;font-weight:700;color:#1e40af;text-align:center;background:white">
+                        <span style="font-size:13px;color:#374151">%</span>
                         <span id="app-scale-val" style="min-width:46px;text-align:center;font-size:15px;font-weight:700;color:#4f46e5;background:#ede9fe;border-radius:6px;padding:2px 8px">100%</span>
-                        <button class="btn btn-outline btn-sm" onclick="applyGlobalScale(100); document.getElementById('app-global-scale').value=100; document.getElementById('app-scale-val').textContent='100%'">Сброс</button>
+                        <button class="btn btn-outline btn-sm" onclick="syncGlobalScale(100,'reset')">Сброс</button>
                     </div>
                     <div style="font-size:11px;color:#6b7280;margin-top:6px">Изменяет масштаб всего интерфейса. Сохраняется между сессиями.</div>
                 </div>
@@ -4604,9 +4609,11 @@
         updateSaOrdersTabVisibility();
         // Восстанавливаем ползунок масштаба
         const _scaleEl = document.getElementById('app-global-scale');
+        const _scaleNumEl = document.getElementById('app-global-scale-num');
         const _scaleValEl = document.getElementById('app-scale-val');
         const _savedScale = parseInt(localStorage.getItem('app_global_scale') || '100');
-        if (_scaleEl) _scaleEl.value = _savedScale;
+        if (_scaleEl)    _scaleEl.value    = _savedScale;
+        if (_scaleNumEl) _scaleNumEl.value = _savedScale;
         if (_scaleValEl) _scaleValEl.textContent = _savedScale + '%';
         document.getElementById('settingsModal').classList.add('open');
     }
@@ -4838,7 +4845,21 @@
         } else {
             // Для вкладок-таблиц
             html += `
-                <div class="appr-item"><label>Масштаб вкладки (%)</label><input type="number" id="appr_scale" min="50" max="200" value="${v('scale', '100')}"></div>
+                <div class="appr-item" style="grid-column:1/-1">
+                    <label>Масштаб вкладки (%)</label>
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px">
+                        <span style="font-size:12px;color:#6b7280">50%</span>
+                        <input type="range" id="appr_scale_range" min="50" max="200" step="5" value="${v('scale', '100')}"
+                            oninput="syncTabScale(this.value,'range')"
+                            style="flex:1;min-width:80px;accent-color:#4f46e5">
+                        <span style="font-size:12px;color:#6b7280">200%</span>
+                        <input type="number" id="appr_scale" min="50" max="200" value="${v('scale', '100')}"
+                            oninput="syncTabScale(this.value,'num')"
+                            style="width:64px;border:1px solid #d1d5db;border-radius:6px;padding:5px 8px;font-size:14px;font-weight:700;color:#4f46e5;text-align:center;background:#f5f3ff">
+                        <span style="font-size:12px;color:#6b7280">%</span>
+                        <button class="btn btn-outline btn-sm" onclick="applyTabScaleToGlobal()" style="white-space:nowrap;font-size:11px" title="Применить масштаб этой вкладки как масштаб всего приложения">↑ Применить как глобальный</button>
+                    </div>
+                </div>
                 <div class="appr-item"><label>Размер текста таблицы (px)</label><input type="number" id="appr_fontSize" min="10" max="40" value="${v('fontSize', '13')}"></div>
                 <div class="appr-item"><label>Шрифт</label><select id="appr_fontFamily">
                     <option value="'Segoe UI', Tahoma, sans-serif" ${v('fontFamily', '')==="'Segoe UI', Tahoma, sans-serif"?'selected':''}>По умолчанию (Segoe UI)</option>
@@ -4921,8 +4942,12 @@
         applyAppearanceEngine();
         loadApprForm();
         applyGlobalScale(100);
-        document.getElementById('app-global-scale').value = 100;
-        document.getElementById('app-scale-val').textContent = '100%';
+        const sl = document.getElementById('app-global-scale');
+        const nm = document.getElementById('app-global-scale-num');
+        const vl = document.getElementById('app-scale-val');
+        if (sl) sl.value = 100;
+        if (nm) nm.value = 100;
+        if (vl) vl.textContent = '100%';
         document.getElementById('appr-ok').textContent = 'Все настройки сброшены';
         setTimeout(() => { const el = document.getElementById('appr-ok'); if(el) el.textContent = ''; }, 3000);
     }
@@ -4938,11 +4963,50 @@
         localStorage.setItem('app_global_scale', pct);
     }
 
+    // Синхронизация: слайдер ↔ числовое поле (глобальный масштаб)
+    function syncGlobalScale(val, from) {
+        const pct = Math.min(150, Math.max(50, parseInt(val) || 100));
+        const rangeEl  = document.getElementById('app-global-scale');
+        const numEl    = document.getElementById('app-global-scale-num');
+        const labelEl  = document.getElementById('app-scale-val');
+        if (from === 'reset') {
+            if (rangeEl)  rangeEl.value  = 100;
+            if (numEl)    numEl.value    = 100;
+            if (labelEl)  labelEl.textContent = '100%';
+            applyGlobalScale(100);
+            return;
+        }
+        if (from === 'range' && numEl)   numEl.value  = pct;
+        if (from === 'num'   && rangeEl) rangeEl.value = Math.min(150, Math.max(50, pct));
+        if (labelEl) labelEl.textContent = pct + '%';
+        applyGlobalScale(pct);
+    }
+
+    // Синхронизация: слайдер ↔ числовое поле (масштаб отдельной вкладки)
+    function syncTabScale(val, from) {
+        const pct = Math.min(200, Math.max(50, parseInt(val) || 100));
+        const rangeEl = document.getElementById('appr_scale_range');
+        const numEl   = document.getElementById('appr_scale');
+        if (from === 'range' && numEl)   numEl.value   = pct;
+        if (from === 'num'   && rangeEl) rangeEl.value = Math.min(200, Math.max(50, pct));
+    }
+
+    // Применить масштаб текущей вкладки как глобальный масштаб приложения
+    function applyTabScaleToGlobal() {
+        const el  = document.getElementById('appr_scale');
+        const pct = Math.min(150, Math.max(50, parseInt(el ? el.value : 100) || 100));
+        syncGlobalScale(pct, 'num');
+        const ok = document.getElementById('appr-ok');
+        if (ok) { ok.textContent = '✅ Масштаб ' + pct + '% применён как глобальный'; setTimeout(() => { ok.textContent = ''; }, 2500); }
+    }
+
     function loadGlobalScale() {
         const saved = parseInt(localStorage.getItem('app_global_scale') || '100');
         const slider = document.getElementById('app-global-scale');
+        const numEl  = document.getElementById('app-global-scale-num');
         const valEl  = document.getElementById('app-scale-val');
         if (slider) slider.value = saved;
+        if (numEl)  numEl.value  = saved;
         if (valEl)  valEl.textContent = saved + '%';
         applyGlobalScale(saved);
     }
@@ -5130,28 +5194,202 @@
 
     // ── Экспорт настроек в JSON-файл ──────────────────────────────────────────────
     function exportSettingsToFile() {
-        const c = getBotCfg();
-        const data = {
-            exportedAt:  new Date().toISOString(),
-            connection:  { url: cfg.url, interval: cfg.interval, token: cfg.token, operator: cfg.operator },
-            users:       getUsers(),
-            security:    getSecCfg(),
-            appearance:  getAppearance(),
-            notif:       getNotifCfg(),
-            bot:         c,
-            subscribers: getBotSubscribers(),
-        };
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = 'priem_settings_' + new Date().toISOString().slice(0,10) + '.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        logAction('export_settings', 'Экспорт настроек в файл');
+        if (!isSuperAdmin()) { alert('Только Супер-Администратор'); return; }
+        // Запускаем асинхронный бекап
+        _doFullBackup();
+    }
+
+    async function _doFullBackup() {
+        // ── UI: показываем прогресс ───────────────────────────────────────────────
+        const btnEl = document.querySelector('[onclick="exportSettingsToFile()"]');
+        const origText = btnEl ? btnEl.innerHTML : '';
+        function setProgress(msg) {
+            if (btnEl) btnEl.innerHTML = '⏳ ' + msg;
+            console.log('[Backup]', msg);
+        }
+        function resetBtn() { if (btnEl) btnEl.innerHTML = origText; }
+
+        try {
+            setProgress('Сбор локальных данных...');
+            await new Promise(r => setTimeout(r, 50)); // дать UI обновиться
+
+            // ── 1. Локальные данные (текущая ТТ + общие) ─────────────────────────
+            const allKeys = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                try { allKeys[k] = JSON.parse(localStorage.getItem(k)); }
+                catch { allKeys[k] = localStorage.getItem(k); }
+            }
+
+            const ttSubMap = {};
+            const ttList   = getTTList() || [];
+            ttList.forEach(tt => {
+                try { ttSubMap[tt.id] = JSON.parse(localStorage.getItem('tt_sub_' + tt.id) || 'null'); } catch {}
+            });
+
+            // ── 2. Загрузка данных ВСЕХ ТТ из Firebase ───────────────────────────
+            const allTTsData = {}; // { ttId: priem_cfg_data }
+            let firebaseError = null;
+
+            if (_fbDB && _fbApp && _fbApp._fbRef) {
+                setProgress('Загрузка ТТ из Firebase...');
+                await new Promise(r => setTimeout(r, 50));
+
+                try {
+                    const { get } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js');
+
+                    // Пробуем получить актуальный список ТТ из облака
+                    let cloudTTList = [...ttList];
+                    try {
+                        const globalSnap = await get(_fbApp._fbRef(_fbDB, 'global/tt_list'));
+                        const gd = globalSnap.val();
+                        if (gd && Array.isArray(gd.list) && gd.list.length > 0) {
+                            // Объединяем: берём union локального и облачного
+                            gd.list.forEach(ctt => {
+                                if (!cloudTTList.find(t => t.id === ctt.id)) cloudTTList.push(ctt);
+                            });
+                        }
+                    } catch(e) { console.warn('[Backup] global/tt_list error:', e.message); }
+
+                    // Загружаем priem_cfg каждой ТТ
+                    for (let i = 0; i < cloudTTList.length; i++) {
+                        const tt = cloudTTList[i];
+                        setProgress('ТТ ' + (i + 1) + '/' + cloudTTList.length + ': ' + (tt.name || tt.id));
+                        await new Promise(r => setTimeout(r, 30));
+                        const path = tt.id === 'tt_1' ? 'priem_cfg' : tt.id + '/priem_cfg';
+                        try {
+                            const snap = await get(_fbApp._fbRef(_fbDB, path));
+                            const d = snap.val();
+                            if (d) allTTsData[tt.id] = d;
+                        } catch(e2) {
+                            console.warn('[Backup] Cannot load TT', tt.id, ':', e2.message);
+                            allTTsData[tt.id] = { _error: e2.message };
+                        }
+                    }
+
+                    // Загружаем глобальных подписчиков из Firebase
+                    setProgress('Загрузка подписчиков...');
+                    try {
+                        const subSnap = await get(_fbApp._fbRef(_fbDB, 'global/bot_subscribers'));
+                        const subData = subSnap.val();
+                        if (Array.isArray(subData) && subData.length > 0) {
+                            // Обновляем локальных подписчиков из Firebase
+                            _cloud.subscribers = subData;
+                        }
+                    } catch(e3) { console.warn('[Backup] subscribers error:', e3.message); }
+
+                } catch(e) {
+                    firebaseError = e.message;
+                    console.warn('[Backup] Firebase error:', e.message);
+                }
+            } else {
+                firebaseError = 'Firebase не подключён — данные других ТТ недоступны';
+            }
+
+            setProgress('Формирование файла...');
+            await new Promise(r => setTimeout(r, 50));
+
+            // ── 3. Собираем итоговый бекап ────────────────────────────────────────
+
+            // Из Firebase данных вытаскиваем сводный список всех пользователей
+            const allUsersMap = {}; // phone/id → user (дедупликация)
+            Object.entries(allTTsData).forEach(([ttId, d]) => {
+                if (d && Array.isArray(d.users)) {
+                    d.users.forEach(u => { allUsersMap[ttId + '_' + u.id] = { ...u, _ttId: ttId }; });
+                }
+            });
+
+            const data = {
+                _backupType:     'FULL_BACKUP',
+                _backupVersion:  APP_BUILD_VERSION,
+                exportedAt:      new Date().toISOString(),
+                exportedBy:      currentUser ? currentUser.name : 'Супер Администратор',
+                _firebaseError:  firebaseError || null,
+
+                // ── Общие настройки (текущая ТТ) ──────────────────────────────
+                connection:      { url: cfg.url, interval: cfg.interval, token: cfg.token, operator: cfg.operator },
+                firebase:        getFBCfg(),
+                security:        getSecCfg(),
+                appearance:      getAppearance(),
+                displayCols:     getDisplayCols(),
+                globalScale:     localStorage.getItem('app_global_scale') || '100',
+                notif:           getNotifCfg(),
+                bot:             getBotCfg(),
+                botAlerts:       (() => { try { return JSON.parse(localStorage.getItem('app_bot_alerts') || '{}'); } catch { return {}; } })(),
+                tgBot:           getTgBotCfg(),
+                blockSchedules:  getBlockSchedules(),
+                superPass:       getSuperPass(),
+
+                // ── Торговые точки ─────────────────────────────────────────────
+                ttList:          ttList,
+                ttSubscriptions: ttSubMap,
+
+                // ── Пользователи ───────────────────────────────────────────────
+                // Пользователи текущей ТТ (из памяти)
+                users:           getUsers(),
+                // Пользователи ВСЕХ ТТ (из Firebase)
+                allUsersAllTTs:  allUsersMap,
+
+                // ── Подписчики бота ────────────────────────────────────────────
+                subscribers:     getBotSubscribers(),
+
+                // ── История действий (текущая ТТ) ──────────────────────────────
+                history:         getHistory(),
+
+                // ── Заказы текущей ТТ ─────────────────────────────────────────
+                orders:          allOrders,
+
+                // ── Полные данные каждой ТТ из Firebase (priem_cfg) ───────────
+                // Содержит: users, security, appearance, bot, history, connection и т.д.
+                allTTs:          allTTsData,
+
+                // ── Снепшот localStorage ───────────────────────────────────────
+                _localStorage:   allKeys,
+
+                // ── In-memory _cloud (текущей ТТ) ─────────────────────────────
+                _cloud: {
+                    users:       _cloud.users       || [],
+                    security:    _cloud.security    || {},
+                    appearance:  _cloud.appearance  || {},
+                    bot:         _cloud.bot         || {},
+                    notif:       _cloud.notif       || {},
+                    botAlerts:   _cloud.botAlerts   || {},
+                    connection:  _cloud.connection  || {},
+                    subscribers: _cloud.subscribers || [],
+                    history:     (_cloud.history    || []).slice(0, 1000),
+                    counter:     _cloud.counter     || null,
+                }
+            };
+
+            // ── 4. Скачиваем файл ─────────────────────────────────────────────────
+            setProgress('Скачивание...');
+            const ttCount   = Object.keys(allTTsData).length;
+            const userCount = Object.keys(allUsersMap).length;
+            const subCount  = getBotSubscribers().length;
+
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = 'FULL_BACKUP_' + new Date().toISOString().slice(0,10) + '_' + new Date().toTimeString().slice(0,5).replace(':','-') + '.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            const note = `ТТ: ${ttCount}, пользователей: ${userCount}, подписчиков: ${subCount}, заказов: ${allOrders.length}`;
+            console.log('[Backup] ✅ Готово:', note);
+            if (firebaseError) {
+                alert('⚠️ Бекап скачан, но Firebase был недоступен:\n' + firebaseError + '\n\nВ бекап вошли только локальные данные текущей ТТ.');
+            }
+
+        } catch(e) {
+            alert('❌ Ошибка создания бекапа: ' + e.message);
+            console.error('[Backup] Error:', e);
+        } finally {
+            resetBtn();
+        }
     }
 
     // ── Импорт настроек из JSON-файла ─────────────────────────────────────────────
@@ -5161,21 +5399,44 @@
         reader.onload = e => {
             try {
                 const data = JSON.parse(e.target.result);
-                if (!confirm('Загрузить настройки из файла? Текущие настройки будут перезаписаны.')) return;
+                const isFull = data._backupType === 'FULL_BACKUP';
+                const msg = isFull
+                    ? '🔄 Загрузить ПОЛНЫЙ бекап из файла?\n\nБудут восстановлены:\n• Все настройки\n• Пользователи\n• Подписчики\n• История\n• Заказы\n• Торговые точки\n\nТекущие данные будут перезаписаны!'
+                    : 'Загрузить настройки из файла? Текущие настройки будут перезаписаны.';
+                if (!confirm(msg)) return;
+
                 if (data.connection) {
                     if (data.connection.url)      localStorage.setItem('cfg_url',      data.connection.url);
-                    if (data.connection.interval) localStorage.setItem('cfg_interval',  data.connection.interval);
+                    if (data.connection.interval) localStorage.setItem('cfg_interval',  String(data.connection.interval));
                     if (data.connection.token)    localStorage.setItem('cfg_token',     data.connection.token);
                     if (data.connection.operator) localStorage.setItem('cfg_operator',  data.connection.operator);
                 }
-                if (data.users)       saveUsers(data.users);
-                if (data.security)    saveSecCfg(data.security);
-                if (data.appearance)  saveAppearanceStorage(data.appearance);
-                if (data.notif)       saveNotifCfg(data.notif);
-                if (data.bot)         saveBotCfgStore(data.bot);
-                if (data.subscribers) saveBotSubscribers(data.subscribers);
-                logAction('import_settings', 'Импорт настроек из файла: ' + file.name);
-                alert('✅ Настройки загружены! Страница будет перезагружена.');
+                if (data.users)           saveUsers(data.users);
+                if (data.security)        saveSecCfg(data.security);
+                if (data.appearance)      saveAppearanceStorage(data.appearance);
+                if (data.displayCols)     { try { localStorage.setItem('display_cols', JSON.stringify(data.displayCols)); } catch {} }
+                if (data.notif)           saveNotifCfg(data.notif);
+                if (data.bot)             saveBotCfgStore(data.bot);
+                if (data.subscribers)     saveBotSubscribers(data.subscribers);
+                if (data.globalScale)     localStorage.setItem('app_global_scale', String(data.globalScale));
+                if (data.tgBot)           { try { localStorage.setItem('app_tg_bot', JSON.stringify(data.tgBot)); } catch {} }
+                if (data.botAlerts)       { try { localStorage.setItem('app_bot_alerts', JSON.stringify(data.botAlerts)); } catch {} }
+                if (data.ttList)          { try { localStorage.setItem('tt_list', JSON.stringify(data.ttList)); } catch {} }
+                if (data.ttSubscriptions) {
+                    Object.entries(data.ttSubscriptions).forEach(([ttId, sub]) => {
+                        if (sub) try { localStorage.setItem('tt_sub_' + ttId, JSON.stringify(sub)); } catch {}
+                    });
+                }
+                if (data.blockSchedules)  { try { localStorage.setItem('block_schedules', JSON.stringify(data.blockSchedules)); } catch {} }
+                if (data.history)         saveHistory(data.history);
+                if (isFull && data.orders && Array.isArray(data.orders) && data.orders.length) {
+                    try { localStorage.setItem('_backup_orders', JSON.stringify(data.orders)); } catch {}
+                }
+                if (data.firebase)        { try { saveFBCfg(data.firebase); } catch {} }
+
+                const ordersNote = (isFull && data.orders) ? ` Заказов в бекапе: ${data.orders.length}.` : '';
+                logAction('import_settings', '📥 Импорт' + (isFull ? ' полного бекапа' : ' настроек') + ' из: ' + file.name + ordersNote);
+                alert('✅ ' + (isFull ? 'Полный бекап' : 'Настройки') + ' загружены!' + ordersNote + '\nСтраница будет перезагружена.');
                 setTimeout(() => location.reload(), 800);
             } catch(err) {
                 alert('Ошибка чтения файла: ' + err.message);
