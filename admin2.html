@@ -8081,13 +8081,19 @@
     // Привязываем методы к app
     Object.assign(app, {
         wmToggle() {
-            const cfg = wmLoad();
-            cfg.enabled = !cfg.enabled;
+            const prev = wmLoad();
+            const cfg = { ...prev, enabled: !prev.enabled };
             localStorage.setItem(WM_KEY, JSON.stringify(cfg));
             wmUpdateToggleUI(cfg.enabled);
-            wmFirebaseSave(cfg);
-            // Обновляем статус расписания
             wmUpdateSchedStatus(cfg);
+            wmFirebaseSave(cfg).then(ok => {
+                if (!ok) {
+                    // В облако не записалось — откатываем тумблер, чтобы админ не думал, что заглушка включена
+                    localStorage.setItem(WM_KEY, JSON.stringify(prev));
+                    wmUpdateToggleUI(!!prev.enabled);
+                    wmUpdateSchedStatus(prev);
+                }
+            });
         },
         wmPreview() {
             const text  = (document.getElementById('wm-text') || {}).value || 'Текст';
@@ -8157,19 +8163,39 @@
                 textPeriod:      g('wm-text-period').value || '',
             };
             localStorage.setItem(WM_KEY, JSON.stringify(cfg));
-            wmFirebaseSave(cfg);
-            const st = document.getElementById('wm-save-status');
-            if (st) { st.textContent = '✅ Сохранено'; st.style.color = '#86efac'; setTimeout(() => st.textContent = '', 2500); }
+            wmFirebaseSave(cfg).then(ok => { if (ok) wmShowStatus('✅ Сохранено', true); });
             wmUpdateSchedStatus(cfg);
         },
     });
 
-    function wmFirebaseSave(cfg) {
+    function wmShowStatus(msg, ok) {
+        const st = document.getElementById('wm-save-status');
+        if (!st) return;
+        st.textContent = msg;
+        st.style.color = ok ? '#86efac' : '#fca5a5';
+        if (ok) setTimeout(() => { if (st.textContent === msg) st.textContent = ''; }, 2500);
+    }
+
+    // Возвращает Promise<boolean>: true — данные реально записаны в облако
+    async function wmFirebaseSave(cfg) {
         try {
-            if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length) {
-                firebase.database().ref('workmode').set({ ...cfg, savedAt: Date.now() });
+            if (typeof firebase === 'undefined') throw new Error('Firebase SDK не загружен');
+            if (!firebase.apps || !firebase.apps.length) {
+                const fbCfg = app.state && app.state.firebase;
+                if (fbCfg && fbCfg.databaseURL && app._initFirebaseApp) app._initFirebaseApp(fbCfg);
             }
-        } catch(e) { console.warn('[workmode] firebase save error:', e); }
+            if (!firebase.apps || !firebase.apps.length) throw new Error('Firebase не подключён (проверьте вкладку «База данных»)');
+            await firebase.database().ref('workmode').set({ ...cfg, savedAt: Date.now() });
+            wmStartFirebaseSync(); // на случай, если слушатель ещё не был запущен
+            return true;
+        } catch (e) {
+            console.warn('[workmode] firebase save error:', e);
+            const denied = /PERMISSION_DENIED/i.test(String(e && (e.code || e.message)));
+            wmShowStatus('❌ Не сохранено в облако: ' + (denied
+                ? 'нет прав записи в /workmode (проверьте Rules в Firebase)'
+                : (e.message || e)), false);
+            return false;
+        }
     }
 
     function wmUpdateSchedStatus(cfg) {
@@ -8315,7 +8341,9 @@
     const _origSetAdmUser = app._setAdminUser ? app._setAdminUser.bind(app) : null;
     if (_origSetAdmUser) app._setAdminUser = function(u) { priemCfgMarkOwnSave(); _origSetAdmUser(u); };
 
+    let _wmSyncOn = false;
     function wmStartFirebaseSync() {
+        if (_wmSyncOn) return true;
         try {
             if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length) {
                 firebase.database().ref('workmode').on('value', snap => {
@@ -8327,9 +8355,12 @@
                     // Обновляем UI если вкладка открыта
                     if (app.state && app.state.adminTab === 'workmode') wmApplyToUI(cfg);
                     else wmUpdateToggleUI(!!cfg.enabled);
-                });
+                }, err => console.warn('[workmode] listener error:', err));
+                _wmSyncOn = true;
+                return true;
             }
         } catch(e) { console.warn('[workmode] firebase sync error:', e); }
+        return false;
     }
 
     // Запуск после init Firebase
@@ -8337,8 +8368,12 @@
     window.onload = async function() {
         if (_origInit2) await _origInit2();
         setTimeout(() => {
-            wmStartFirebaseSync();
             priemCfgStartSync(); // синхронизация priem_cfg в реальном времени
+            // Firebase может подняться позже 2 сек — пробуем до 30 раз
+            let tries = 0;
+            const t = setInterval(() => {
+                if (wmStartFirebaseSync() || ++tries > 30) clearInterval(t);
+            }, 1000);
         }, 2000);
     };
     </script>
